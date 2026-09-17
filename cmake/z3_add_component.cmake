@@ -57,11 +57,5 @@ function(z3_add_component component_name)
     # CMake carries the complete object closure without manual expansion.
     set_property(TARGET ${component_name} APPEND PROPERTY
       INTERFACE_LINK_LIBRARIES_DIRECT ${Z3_MOD_COMPONENT_DEPENDENCIES})
-  endif()
-
-  if (NOT Z3_MOD_NOT_LIBZ3_COMPONENT)
-    target_link_libraries(libz3 PRIVATE
-      "$<BUILD_LOCAL_INTERFACE:${component_name}>")
-  endif()
 endfunction()
 
