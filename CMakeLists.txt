@@ -11,19 +11,6 @@ set(Z3_FULL_VERSION_STR "${Z3_VERSION}") # Note this might be modified
 message(STATUS "Z3 version ${Z3_VERSION}")
 
 ################################################################################
-# Message for polluted source tree sanity checks
-################################################################################
-set(z3_polluted_tree_msg
-  " should not exist and is polluting the source tree."
-  " It is likely that this file came from the Python build system which"
-  " generates files inside the source tree. This is bad practice and the CMake"
-  " build system is setup to make sure that the source tree is clean during"
-  " its configure step. If you are using git you can remove all untracked files"
-  " using ``git clean -fx``. Be careful when doing this. You should probably use"
-  " this with ``-n`` first to check which file(s) would be removed."
-)
-
-################################################################################
 # Sanity check - Disallow building in source
 ################################################################################
 if (PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
