@@ -359,9 +359,10 @@ Standard proof-producing solver calls still reject field solving. The explicit
 `ff-certify` shell command can export a checked polynomial contradiction and an
 experimental Alethe extension without changing the default solver.
 Input dependency sets support cores and Boolean conflict clauses; they are
-**not** algebraic certificates. Preserve this distinction. The new F4 and
-uniqueness passes do not yet emit the derivations consumed by the standalone
-certificate pipeline. The supplied Python uniqueness checker regenerates its
+**not** algebraic certificates. Preserve this distinction. The F4 backend now
+records optional ideal derivations for the standalone Alethe/PAC pipeline; see
+[the F4 certificate extension](QF_FF_F4_CERTIFICATES.md). Uniqueness, tiny-field
+search and field-root branches do not yet export checked derivations. The supplied Python uniqueness checker regenerates its
 own derivation; it is not a checker for a trace emitted by the C++ tactic.
 
 The native AST and polynomial engine are independent of the BV encoder. Future

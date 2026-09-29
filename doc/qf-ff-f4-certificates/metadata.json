@@ -1,0 +1,77 @@
+{
+  "timeout": 10.0,
+  "jobs": 4,
+  "memory_mib": 16384,
+  "memory": "worker plus descendant RSS sampled every 50 ms; overshoot possible",
+  "timing": "whole worker wall time including process startup, production and checking",
+  "members": 408,
+  "distinct": 390,
+  "configurations": [
+    {
+      "id": "base-proof",
+      "kind": "z3-proof",
+      "command": [
+        "/Users/romainsoulat/z3/tests/finite_field/results/ff-backend-fixes-20260929/binaries/fixed-z3"
+      ],
+      "certificate_backend": "auto"
+    },
+    {
+      "id": "new-auto-proof",
+      "kind": "z3-proof",
+      "command": [
+        "/private/tmp/ff-alethe-backend-20260929/binaries/z3-final"
+      ],
+      "certificate_backend": "auto"
+    },
+    {
+      "id": "paper-candidate-proof",
+      "kind": "cvc5-proof",
+      "command": [
+        "/Users/romainsoulat/z3/tests/finite_field/results/fmcad-cvc5-comparison-20260924/binaries/cvc5-paper",
+        "--lang=smt2",
+        "--simplification=none",
+        "--dump-proofs",
+        "--proof-format-mode=alethe",
+        "--ff-proof-pac",
+        "--produce-proofs",
+        "--proof-granularity=dsl-rewrite"
+      ],
+      "checker_args": [
+        "--allow-int-real-subtyping",
+        "--rare-file",
+        "/Users/romainsoulat/z3/tests/finite_field/results/fmcad-cvc5-comparison-20260924/provenance/rewrites.eo"
+      ]
+    }
+  ],
+  "binaries": {
+    "base-proof": {
+      "path": "/Users/romainsoulat/z3/tests/finite_field/results/ff-backend-fixes-20260929/binaries/fixed-z3",
+      "sha256": "959bd679acd1318a62d3f0a84be4027da3b18078bb4aaee066fde4134446b77e"
+    },
+    "new-auto-proof": {
+      "path": "/private/tmp/ff-alethe-backend-20260929/binaries/z3-final",
+      "sha256": "f1c047be5f75cbd37689c59a6333e37299d32440734941503760c283d3224dde"
+    },
+    "paper-candidate-proof": {
+      "path": "/Users/romainsoulat/z3/tests/finite_field/results/fmcad-cvc5-comparison-20260924/binaries/cvc5-paper",
+      "sha256": "336c22eeed5dbbb2d925fc39054f6c84898d9428902dc8e5c259c4aa7538ee53"
+    }
+  },
+  "checkers": {
+    "carcara": {
+      "path": "/Users/romainsoulat/z3/tests/finite_field/results/fmcad-cvc5-comparison-20260924/binaries/carcara",
+      "sha256": "f5fb1fe984061181868a3d322261a95c1392d19dd500403603625c9d58e81bb4"
+    },
+    "ffpacheck": {
+      "path": "/Users/romainsoulat/z3/tests/finite_field/results/fmcad-cvc5-comparison-20260924/binaries/ffpacheck",
+      "sha256": "8a7e9a31d9287a0b9266395b6c3b819da8545a2241b540e77451af33cc1948be"
+    }
+  },
+  "python": "3.14.2 (main, Dec  5 2025, 16:49:16) [Clang 17.0.0 (clang-1700.4.4.1)]",
+  "runner_sha256": "0e65813e372f7d94400b78b7b0c3255aa5faf8f3b0199cf29fb2916b0ff41d60",
+  "pipeline_sha256": {
+    "ff_certificate.py": "7a860898d5f3a98c54729e79fa80f55d6d1614acd98f4fc2092ae36dc48a0168",
+    "ff_boolean_proof.py": "793622570beef651fcc7ff5abb28abd3b580e5412acaf91c7bccb7e4740766fd",
+    "ff_proof_pipeline.py": "d58b72d38c84a7c025da245d6b8d262b6ae1778f0c0240fbd73ac6840e700bf0"
+  }
+}

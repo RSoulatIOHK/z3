@@ -1,0 +1,175 @@
+{
+  "distinct": 390,
+  "members": 408,
+  "configurations": {
+    "base-proof": {
+      "statuses": {
+        "checked": 354,
+        "unavailable": 32,
+        "timeout": 4
+      },
+      "checked": 354,
+      "weighted_checked": 372,
+      "produced": 355,
+      "median_seconds": 0.26885691650386434
+    },
+    "new-auto-proof": {
+      "statuses": {
+        "checked": 355,
+        "unavailable": 31,
+        "timeout": 4
+      },
+      "checked": 355,
+      "weighted_checked": 373,
+      "produced": 356,
+      "median_seconds": 0.27876183300395496
+    },
+    "paper-candidate-proof": {
+      "statuses": {
+        "checked": 358,
+        "timeout": 32
+      },
+      "checked": 358,
+      "weighted_checked": 376,
+      "produced": 362,
+      "median_seconds": 0.24257583350117784
+    }
+  },
+  "pairs": {
+    "base-proof -> new-auto-proof": {
+      "common": 354,
+      "gains": [
+        {
+          "sha256": "7388838d4ea49d53e812a0a53d1a3a383fc1bc1c6d04240b27d09dade18895fe",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-10v-064t-ff-zokref-255b-0s.smt2"
+        }
+      ],
+      "losses": [],
+      "common_seconds": {
+        "base-proof": 215.61955775713432,
+        "new-auto-proof": 216.00821067184734
+      },
+      "median_ratio": 1.0083407524154357
+    },
+    "paper-candidate-proof -> new-auto-proof": {
+      "common": 343,
+      "gains": [
+        {
+          "sha256": "14a4c792886924d186f9c6bff1f48d582184fb750310bea7dbddfeccbd946362",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-10v-016t-ff-circ-255b-0s.smt2"
+        },
+        {
+          "sha256": "29166367d976792891cb909bc065d7e9daadf4ff4b5747b195c73b361a72041a",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-10v-016t-ff-zokref-255b-0s.smt2"
+        },
+        {
+          "sha256": "58b9e6a6f0afdeebffb40356f92a51e43d5df51ea8c1dbe745a1987fb596a9ba",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-08v-016t-ff-circ-255b-0s.smt2"
+        },
+        {
+          "sha256": "5a5afc69bd4c4116adeb3109a58d3d8b32f8340a6ec3690f9d00178499f7d982",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-06v-032t-ff-zokref-255b-0s.smt2"
+        },
+        {
+          "sha256": "62e46809758c24f7c2b57a53015e24d618deaa938a75f9bed914301fc54fd1ff",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-04v-016t-ff-circ-255b-0s.smt2"
+        },
+        {
+          "sha256": "6571c51c355168577d4ce7db3ed0e595a55d86c6b911fe812944bab5e752b161",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-02v-016t-ff-zokcirc-255b-0s.smt2"
+        },
+        {
+          "sha256": "674eeb75f875d322f559741074a224419093f5a1d84fc92e08beaad902b12329",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-08v-016t-ff-zokref-255b-0s.smt2"
+        },
+        {
+          "sha256": "6b06e3c443137d4d23b987287da476e5b28450d102b541a560cff1681f48c357",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-10v-032t-ff-zokref-255b-0s.smt2"
+        },
+        {
+          "sha256": "721dd9f728b1d64b0743290e39efb5e3bd666655d70a09f7f561659310936cf6",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-06v-016t-ff-circ-255b-0s.smt2"
+        },
+        {
+          "sha256": "7388838d4ea49d53e812a0a53d1a3a383fc1bc1c6d04240b27d09dade18895fe",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-10v-064t-ff-zokref-255b-0s.smt2"
+        },
+        {
+          "sha256": "7ec9370a0bf6ab0718fbeb8559f1c5ad7fd89bc9a8d52153c7e93c57ffe57411",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-random-10v-032t-ff-zokref-255b-0s.smt2"
+        },
+        {
+          "sha256": "97931f0953b352409111718c1474944c6556569a51494bba1602b010811add6c",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-04v-032t-ff-zokref-255b-0s.smt2"
+        }
+      ],
+      "losses": [
+        {
+          "sha256": "00faf635e7480e178746e0c9959856dd1547e529e308c3d4c2308d74be230b41",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-02v-064t-ff-zokcirc-255b-0s.smt2"
+        },
+        {
+          "sha256": "11e062eef62c5a8bdb9b6af5329addff7b5003356f822a43d576888360d217a1",
+          "member": "benchmarks/SMT-LIB/compilation-sound-none-10v-004t-ff-circ-255b-0s.smt2"
+        },
+        {
+          "sha256": "1b844404b4e4e950f669cfd14ebf29991037b6238925dd4990b2fa59fc1591e5",
+          "member": "benchmarks/SMT-LIB/compilation-sound-none-08v-001t-ff-circ-255b-0s.smt2"
+        },
+        {
+          "sha256": "2165991afc7c7df294f75417ee4b623a1578abee77b55c7bbe91ba2480a6436b",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-random-02v-016t-ff-zokref-255b-0s.smt2"
+        },
+        {
+          "sha256": "5220bb26eb603a92eabaa042ad50f174780d0e3e75c52ddd5fb68e7185793866",
+          "member": "benchmarks/SMT-LIB/compilation-sound-none-08v-004t-ff-circ-255b-0s.smt2"
+        },
+        {
+          "sha256": "530bbee53498f08132fcc9acd41f7c83a1052abc1ca4f800e2b054f87c7ca5df",
+          "member": "benchmarks/SMT-LIB/compilation-sound-none-08v-002t-ff-circ-255b-0s.smt2"
+        },
+        {
+          "sha256": "53d7928567ed896e95b6e635a6433e0f67ad2015f92f976d77481f30398e88e0",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-12v-064t-ff-zokcirc-255b-0s.smt2"
+        },
+        {
+          "sha256": "77e216af2d04a37ecc8a4d8c45ce0f8f67cdd734f5f65510c7d32e5f4a1f2d3f",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-12v-128t-ff-zokcirc-255b-0s.smt2"
+        },
+        {
+          "sha256": "94ccb1236226086aa7f455f73fab719270f671145d6897787706676bb40996ea",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-10v-128t-ff-zokcirc-255b-0s.smt2"
+        },
+        {
+          "sha256": "9e69199a6b3ea0f572105c7fe30efad4b078fbdc1654073b85fa545ea20575c1",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-04v-128t-ff-zokcirc-255b-0s.smt2"
+        },
+        {
+          "sha256": "ad724e2ab2bed04174f35adb3d2b80d6b25f5af9f90a039a4635cf9137858459",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-02v-128t-ff-zokcirc-255b-0s.smt2"
+        },
+        {
+          "sha256": "c2dc703211ed4e181f6c24b1a52de957ba21bad92e6c2f1a4cbc0a858ca4795d",
+          "member": "benchmarks/SMT-LIB/compilation-sound-none-12v-008t-ff-zokcirc-255b-0s.smt2"
+        },
+        {
+          "sha256": "ddb0ef1b25a7bf557a426e1159c6605764410d6692ec7b86e1dd88b4223b502c",
+          "member": "benchmarks/SMT-LIB/compilation-sound-none-10v-016t-ff-circ-255b-0s.smt2"
+        },
+        {
+          "sha256": "f9152383d8a9bc96f7b9d105a0467672fa16b59a4589a9a5602aa68c64b77f8d",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-04v-064t-ff-zokcirc-255b-0s.smt2"
+        },
+        {
+          "sha256": "fb06bc96f2f40898026457dca27b6dc7d74712f981c48cb252f9825535112a87",
+          "member": "benchmarks/SMT-LIB/compilation-deterministic-none-06v-064t-ff-zokcirc-255b-0s.smt2"
+        }
+      ],
+      "common_seconds": {
+        "paper-candidate-proof": 148.56685499793093,
+        "new-auto-proof": 211.6749921728333
+      },
+      "median_ratio": 1.5332470003552665
+    }
+  }
+}
