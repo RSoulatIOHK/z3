@@ -16,10 +16,13 @@ namespace ff {
         unsigned root = 0;
     };
 
-    // Bounded scalar reconstruction from the original polynomial equations.
+    enum class certificate_backend { scalar, f4, automatic };
+
+    // Bounded reconstruction from the original polynomial equations.
     // true witnesses 1 in their ideal. false means no certificate, never SAT.
     // Exhaustion propagates; output is replaced only on success. No cache,
     // field axioms, substitutions, sampled models or unproved facts are used.
     bool certify(engine &arithmetic, std::vector<polynomial> const &equations,
-                 certificate &output, unsigned max_nodes = 100000);
+                 certificate &output, unsigned max_nodes = 100000,
+                 certificate_backend backend = certificate_backend::automatic);
 }

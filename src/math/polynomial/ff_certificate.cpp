@@ -1,5 +1,6 @@
 #include "math/polynomial/ff_certificate.h"
 #include <algorithm>
+#include "math/polynomial/ff_f4.h"
 #include <queue>
 #include <tuple>
 
@@ -94,6 +95,31 @@ namespace ff {
         }
     public:
         certificate_builder(engine &e, unsigned max_nodes) : e(e), max_nodes(std::min(max_nodes, 100000u)) {}
+        bool run_f4(std::vector<polynomial> const &equations, certificate &out, unsigned allowance) {
+            if (e.steps() >= e.max_work) throw exhausted();
+            unsigned variables = 0;
+            for (auto const &eq : equations) for (auto const &[mon, c] : eq) for (unsigned v : mon) {
+                e.tick();
+                if (v >= 4096) return false;
+                variables = std::max(variables, v + 1);
+            }
+            f4_config cfg;
+            cfg.max_certificate_nodes = max_nodes;
+            f4_stats stats;
+            std::vector<rational> values(variables);
+            std::set<unsigned> conflict;
+            unsigned start = e.steps();
+            auto charge = [&](unsigned n) {
+                // The local F4 slice and scalar fallback share the same engine
+                // allowance and cancellation source; exhaustion cannot reset either.
+                for (unsigned i = 0; i < std::max(n, 1u); ++i) {
+                    if (e.steps() - start >= allowance) throw exhausted();
+                    e.tick();
+                }
+            };
+            return f4_solve(e.p, equations, {}, variables, values, conflict, cfg, stats,
+                            charge, nullptr, &out) == l_false;
+        }
         bool run(std::vector<polynomial> const &equations, certificate &out, bool linear_first = false) {
             // Linear and sparse equations can eliminate variables before
             // nonlinear input rows create large intermediate polynomials.
@@ -135,7 +161,26 @@ namespace ff {
         }
     };
     bool certify(engine &arithmetic, std::vector<polynomial> const &equations,
-                 certificate &output, unsigned max_nodes) {
+                 certificate &output, unsigned max_nodes, certificate_backend backend) {
+        if (backend == certificate_backend::automatic) {
+            bool scalar_exhausted = false;
+            try {
+                // Preserve successful scalar traces and their Boolean conflict
+                // cores. A different F4 core can change downstream search even
+                // when both polynomial derivations are valid.
+                if (certify(arithmetic, equations, output, max_nodes, certificate_backend::scalar)) return true;
+            }
+            catch (exhausted const &) {
+                scalar_exhausted = true;
+                // Structural/DAG limits may leave work for a different search.
+                // run_f4 keeps the SAME engine allowance and cancellation state.
+            }
+            bool found = certificate_builder(arithmetic, max_nodes).run_f4(equations, output, ~0u);
+            if (!found && scalar_exhausted) throw exhausted();
+            return found;
+        }
+        if (backend == certificate_backend::f4)
+            return certificate_builder(arithmetic, max_nodes).run_f4(equations, output, ~0u);
         try {
             // Preserve the original schedule when it succeeds. A different
             // insertion order can help after a basis/storage bound is hit, but
