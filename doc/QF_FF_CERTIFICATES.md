@@ -28,7 +28,7 @@ explicit error. This command does not alter assertions or the solver result.
 The initial interface is shell-only. The reusable C++ `ff::certify` API takes
 polynomial equations; no C/Python solver API or Z3 native proof rule is added.
 Its output object is replaced only on success, including after cancellation.
-The ordinary solver has no new recording branch or per-polynomial proof data.
+Native elimination and basis operations now have opt-in recording hooks; ordinary solving leaves the recorder disabled.
 
 ```sh
 build-ff-cmake/z3 tests/finite_field/fixtures/certificates/large-prime.smt2 > /tmp/large.ffcert
@@ -227,3 +227,57 @@ ordinary ideal-combination trace without the field axiom is insufficient.
 Conflict dependencies alone do not record this distinction. Adaptive symbolic
 matrix admission changes resource policy only; its reducer multiples and row
 operations retain the existing ideal-combination certificate obligations.
+
+## Recording native transformations (experimental)
+
+`ff-certify :backend native` and the pipeline option `--backend native` enable
+proof recording through `engine::solve`, including its elimination and basis
+backend selection. Normal solving and certificate generation share these routines.
+An optional observer records each substitution, preserving equation indices
+and composing its evidence with subsequent polynomial reductions. The existing
+`auto` schedule is unchanged.
+
+For a defining equation `d = c*(v-t)`, with nonzero constant `c` and `v` absent
+from `t`, substitution records
+
+```
+f[v:=t] = f - (d/c) * sum_(a*m*v^k in f) a*m * sum_(i=0..k-1) v^(k-1-i)*t^i.
+```
+
+The geometric-series identity justifies nonlinear definitions and repeated
+powers. Evidence uses the existing input/multiply/add DAG and existing
+independent checker; no trusted substitution rule is added. Proof nodes and
+arithmetic remain subject to the shared cancellation and resource bounds.
+Disequalities must already have their checked inverse-witness encoding.
+
+This is a first integration step, not proof recording throughout normal
+`check-sat`. In traced mode, elimination stops before bit-domain inference;
+residual equations go to the native F4 or legacy basis computation with recording enabled; F4 inputs are linked back to the earlier substitutions.
+The Boolean orchestration remains separate, but the native backend now uses Z3 SAT search with recorded clause evidence instead of Python DPLL. Recording bit decomposition and
+uniqueness, finite-field root reasoning and exhaustive branches, preprocessing
+and definitional extensions, and native SAT/theory conflict resolution remains
+necessary before claiming evidence for every native UNSAT path. Each path must
+produce independently checked evidence or explicitly report unavailable.
+
+`test_ff_native_certificates.py` runs the existing exhaustive small-field,
+corruption, input-binding and resource oracle suite with the native backend,
+plus nonlinear cubic substitutions with non-unit pivots over five fields up to
+521 bits, and 32 forced native scalar/matrix/storage configurations. Native C++
+tests also ensure those hooks exercise fused and geobucket reduction, matrix
+elimination, lazy reducers and sparse reducer selection. This test is included in the proof acceptance suite.
+
+Native basis recording covers normalization, S-polynomials, scalar reduction,
+fused and geobucket reduction, packed and tree sparse matrix elimination, and
+eager/lazy reducer materialization. The proof ID denotes the complete reduction
+row, including terms already emitted to the remainder. Pair scheduling and
+storage changes do not become proof premises. Cached bases currently refuse
+recording because their dependency cores do not carry reusable derivations.
+
+The opt-in native Boolean layer calls `ff-boolean-certify` on a bound Boolean
+abstraction. SAT assignments are checked against every supplied clause. For
+UNSAT, every new native clause must admit reverse-unit-propagation replay into
+explicit resolution; solver-labelled input clauses are not trusted as new
+assumptions. Unsupported auxiliary variables or non-replayable steps refuse
+production. Deletions may be ignored because retaining proved clauses preserves
+logical consequences. The final certificate still uses the unchanged independent
+Boolean/Alethe verifier and externally checked field lemmas.

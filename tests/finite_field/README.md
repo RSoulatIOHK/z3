@@ -41,9 +41,9 @@ can be supplied with `--archives DIR` (`carcara.tar.gz`, `ffpacheck.tar.gz`).
 See [the checker trust boundary](proof_checkers/README.md) for required input
 binding and why raw external-checker acceptance alone is insufficient.
 
-The four proof suites include forced-F4 derivations and exhaustive small-field
+The six proof suites include native wire-elimination and forced-F4 derivations and exhaustive small-field
 oracles, independent DAG/Alethe replay, original-input binding,
-external literal and Boolean pipelines, tampered/truncated/wrong-input rejection,
+external literal and Boolean pipelines, native SAT clause replay, tampered/truncated/wrong-input rejection,
 and resource recovery. Missing checkers are an error, not a skipped pass.
 Use `--suite all` to combine core and proof selections.
 
