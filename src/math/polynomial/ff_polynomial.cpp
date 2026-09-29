@@ -1,6 +1,7 @@
 #include "math/polynomial/ff_polynomial.h"
 #include "math/polynomial/ff_tiny.h"
 #include "math/polynomial/ff_f4.h"
+#include "math/polynomial/ff_certificate.h"
 #include <algorithm>
 #include <iterator>
 #include <set>
@@ -1610,6 +1611,10 @@ namespace ff {
         // Disequalities require witness equations in the certificate caller.
         // Never run an unrecorded disequality substitution in tracing mode.
         if (observer && !neqs.empty()) return l_undef;
+        // The observer records a complete substitution identity. Internal
+        // definition construction and accumulator updates are not independent
+        // equations equal to zero and must not receive arithmetic proof IDs.
+        flet<polynomial_observer*> suspend(m_proof, nullptr);
         // Sparse occurrence indices avoid rescanning every circuit equation after
         // each wire elimination. Requeue only constraints whose polynomial changed.
         using uses = std::map<unsigned, std::set<unsigned>>;
@@ -1733,9 +1738,9 @@ namespace ff {
                     auto affected = eq_uses[v];
                     for (unsigned j : affected) {
                         index(eq_uses, eqs[j], j, false);
-                        if (observer)
-                            observer->substitution(j, i, eqs[j], v, def, pivot);
+                        unsigned proof = observer ? observer->substitution(j, i, eqs[j], v, def, pivot) : ~0u;
                         eqs[j] = substitute(eqs[j], v, def);
+                        eqs[j].derivation = proof;
                         index(eq_uses, eqs[j], j, true);
                         pending.emplace(eqs[j].size(), j, ++revision[j]);
                     }
@@ -1774,9 +1779,17 @@ namespace ff {
                              unsigned depth) {
         if (depth > 32)
             return l_undef;
+        // Until branch hypotheses and split-consequence lemmas are recorded,
+        // proof mode must not enter those inference paths.
+        if (m_proof && (depth != 0 || linear_split || !neqs.empty() || !m_elimination_proof)) return l_undef;
         if (linear_split && depth == 0) split_consequences(eqs);
         std::vector<std::pair<unsigned, polynomial>> defs;
-        if (eliminate(eqs, neqs, defs) == l_false) return l_false;
+        if (eliminate(eqs, neqs, defs, m_elimination_proof) == l_false) {
+            if (!m_proof) return l_false;
+            for (auto const &f : eqs)
+                if (f.size() == 1 && f.begin()->first.empty() && m_proof->contradiction(f)) return l_false;
+            return l_undef;
+        }
         // 0=0 is true, but a disequality simplified to 0!=0 is a conflict.
         std::erase_if(eqs, [](auto const &f) { return f.empty(); });
         for (auto const &f : neqs)
@@ -1791,6 +1804,7 @@ namespace ff {
                 values[i->first] = evaluate(i->second, values);
         };
         if (eqs.empty()) {
+            if (m_proof) return l_undef;
             // A verified witness is sufficient; failed sampling never means UNSAT.
             for (unsigned trial = 0; trial < 32; ++trial) {
                 for (auto &v : values)
@@ -1808,7 +1822,7 @@ namespace ff {
             }
             return l_undef;
         }
-        if ((sparse_enabled || model_search) && depth == 0) {
+        if (!m_proof && (sparse_enabled || model_search) && depth == 0) {
             std::set<unsigned> active;
             for (auto const &f : eqs)
                 for (auto const &[mon, coefficient] : f)
@@ -1876,7 +1890,7 @@ namespace ff {
                 }
             }
         }
-        if (tiny_search && depth == 0 && p < rational(64) && !eqs.empty()) {
+        if (!m_proof && tiny_search && depth == 0 && p < rational(64) && !eqs.empty()) {
             lbool r = tiny_solve(eqs, neqs, values);
             if (r == l_true) {
                 restore();
@@ -1895,6 +1909,7 @@ namespace ff {
             // replacement for the legacy basis computation below.
             ++f4_calls;
             f4_config cfg;
+            if (m_proof) cfg.max_certificate_nodes = m_proof->remaining_nodes();
             cfg.max_quotient_dim = f4_max_quotient;
             cfg.value_split = f4_value_split;
             cfg.slice_attempts = f4_slice;
@@ -1928,12 +1943,16 @@ namespace ff {
                 f4_work += k;
                 if (f4_work > stop)
                     throw exhausted();
-                if (!limit.inc())
-                    throw exhausted();
+                if (m_proof) {
+                    for (unsigned i = 0; i < std::max(k, 1u); ++i) tick();
+                }
+                else if (!limit.inc()) throw exhausted();
             };
+            certificate native_proof;
             try {
                 r = f4_solve(p, eqs, neqs, static_cast<unsigned>(values.size()), trial, core, cfg, fst, charge,
-                             &reduced);
+                             &reduced, m_proof ? &native_proof : nullptr);
+                if (r == l_false && m_proof && !m_proof->import_f4(native_proof, eqs)) r = l_undef;
             }
             catch (exhausted const &) {
                 r = l_undef;
@@ -1966,6 +1985,13 @@ namespace ff {
         }
         if (!have_basis)
             basis(eqs);
+        if (m_proof) {
+            for (auto const &f : eqs)
+                if (f.size() == 1 && f.begin()->first.empty() && m_proof->contradiction(f)) return l_false;
+            // Remaining UNSAT paths require finite-field axioms or exhaustive
+            // branch coverage; an unrecorded root computation is not a proof.
+            return l_undef;
+        }
         if (quotient_field && depth == 0 && work < max_work) {
             engine probe(p, limit, std::min(50000u, (max_work - work) / 16),
                          std::min(max_terms, 512u), false, batch_enabled, false);

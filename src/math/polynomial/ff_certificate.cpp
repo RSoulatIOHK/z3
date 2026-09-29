@@ -64,8 +64,53 @@ namespace ff {
             compact.root = renamed[proof.root];
             out = std::move(compact);
         }
+        bool import_f4(certificate const &local, std::vector<polynomial> const &residual) override {
+            // F4 numbers its inputs in the residual equation array. Import
+            // only the final root's ancestors and replace every local input
+            // by the evidence that produced that residual from original inputs.
+            std::vector<bool> live(local.nodes.size(), false);
+            std::vector<unsigned> pending{local.root}, ids(local.nodes.size(), ~0u);
+            while (!pending.empty()) {
+                e.tick();
+                unsigned id = pending.back(); pending.pop_back();
+                if (id >= local.nodes.size()) throw exhausted();
+                if (live[id]) continue;
+                live[id] = true;
+                auto const &n = local.nodes[id];
+                if (n.kind != certificate::rule::input) {
+                    if (n.left >= id) throw exhausted();
+                    pending.push_back(n.left);
+                }
+                if (n.kind == certificate::rule::add) {
+                    if (n.right >= id) throw exhausted();
+                    pending.push_back(n.right);
+                }
+            }
+            for (unsigned id = 0; id < local.nodes.size(); ++id) {
+                e.tick();
+                if (!live[id]) continue;
+                auto const &n = local.nodes[id];
+                if (n.kind == certificate::rule::input) {
+                    if (n.left >= residual.size()) throw exhausted();
+                    auto const &f = residual[n.left];
+                    ids[id] = f.empty() ? multiply(0, rational(0), {}) : f.derivation;
+                    if (ids[id] == ~0u) throw exhausted();
+                }
+                else if (n.kind == certificate::rule::multiply)
+                    ids[id] = multiply(ids[n.left], n.coefficient, n.factor);
+                else ids[id] = add(ids[n.left], ids[n.right]);
+            }
+            proof.root = ids[local.root];
+            return true;
+        }
+        unsigned remaining_nodes() const override { return max_nodes - static_cast<unsigned>(proof.nodes.size()); }
+        bool contradiction(polynomial const &f) override {
+            if (f.size() != 1 || !f.begin()->first.empty() || f.derivation == ~0u) return false;
+            proof.root = multiply(f.derivation, e.inverse(f.begin()->second), {});
+            return true;
+        }
         std::vector<unsigned> elimination_proofs;
-        void substitution(unsigned row, unsigned definition, polynomial const &before,
+        unsigned substitution(unsigned row, unsigned definition, polynomial const &before,
                           unsigned variable, polynomial const &value,
                           rational const &pivot) override {
             unsigned id = elimination_proofs[row];
@@ -98,6 +143,7 @@ namespace ff {
                 }
             }
             elimination_proofs[row] = id;
+            return id;
         }
         row reduce(row f) {
             polynomial remainder;
@@ -189,35 +235,27 @@ namespace ff {
             // nonlinear input rows create large intermediate polynomials.
             // This only changes search order: input nodes retain their original
             // equation indices, and the checker still replays every multiplier.
-            std::vector<polynomial> residual;
             if (native) {
-                residual = equations;
-                for (unsigned i = 0; i < equations.size(); ++i)
-                    elimination_proofs.push_back(record({certificate::rule::input, i, 0, rational(1), {}}));
-                std::vector<polynomial> neqs;
-                std::vector<std::pair<unsigned, polynomial>> definitions;
-                // This is the same elimination routine called by solve_core,
-                // with evidence captured at each actual substitution. Residual
-                // equations retain their original slots and composed proofs.
-                lbool eliminated = e.eliminate(residual, neqs, definitions, this);
-                for (unsigned i = 0; i < residual.size(); ++i)
-                    residual[i].derivation = residual[i].empty() ? ~0u : elimination_proofs[i];
-                auto close = [&]() {
-                    for (auto const &f : residual) {
-                        if (f.size() != 1 || !f.begin()->first.empty()) continue;
-                        if (f.derivation == ~0u) return false;
-                        proof.root = multiply(f.derivation, e.inverse(f.begin()->second), {});
-                        finish_native(out);
-                        return true;
+                auto input = equations;
+                unsigned variables = 0;
+                for (unsigned i = 0; i < input.size(); ++i) {
+                    input[i].derivation = record({certificate::rule::input, i, 0, rational(1), {}});
+                    elimination_proofs.push_back(input[i].derivation);
+                    for (auto const &[mon, c] : input[i]) for (unsigned v : mon) {
+                        e.tick();
+                        if (v >= 100000) throw exhausted();
+                        variables = std::max(variables, v + 1);
                     }
-                    return false;
-                };
-                if (eliminated == l_false) return close();
-                // Record the native basis computation, including its actual
-                // pair schedule, autoreduction and chosen row representation.
+                }
+                std::vector<rational> values(variables);
+                // The native engine now owns search and backend selection.
+                // Observers only record evidence from its actual operations;
+                // no second basis schedule or root search is reconstructed.
                 flet<polynomial_observer*> recording(e.m_proof, this);
-                e.basis(residual);
-                return close();
+                flet<elimination_observer*> substitutions(e.m_elimination_proof, this);
+                if (e.solve(input, {}, values) != l_false) return false;
+                finish_native(out);
+                return true;
             }
             std::vector<std::tuple<unsigned, size_t, unsigned>> order;
             for (unsigned i = 0; i < equations.size(); ++i) {

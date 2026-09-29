@@ -21,6 +21,7 @@ namespace ff {
             for (unsigned mode = 0; mode < 8; ++mode) {
                 reslimit limit;
                 engine e(rational(7), limit, 1000000, 4096, true, mode >= 3, false);
+                e.f4 = false;
                 e.fused_reduction = mode == 1;
                 e.geobucket = mode == 2;
                 e.compact_matrix = mode == 4 || mode == 7;
@@ -43,8 +44,24 @@ namespace ff {
                 bool stopped = false;
                 try { certify(e, eqs, proof, 4, certificate_backend::native); }
                 catch (exhausted const &) { stopped = true; }
-                ENSURE(stopped && e.m_proof == nullptr);
+                ENSURE(stopped && e.m_proof == nullptr && e.m_elimination_proof == nullptr);
             }
+        }
+        static void native_f4_composition() {
+#if Z3_FF_HAS_UINT128
+            reslimit limit;
+            engine e(rational(7), limit, 1000000);
+            auto x = e.variable(0), y = e.variable(1), z = e.variable(2);
+            std::vector<polynomial> eqs{
+                e.add(x, e.add(e.mul(z, z), e.constant(rational(1))), rational(-1)),
+                e.add(e.mul(x, x), e.constant(rational(-1))),
+                e.add(e.mul(x, y), e.constant(rational(-1))),
+                e.add(e.mul(y, y), e.constant(rational(-2)))};
+            certificate proof;
+            ENSURE(certify(e, eqs, proof, 100000, certificate_backend::native));
+            ENSURE(e.m_eliminations > 0 && e.f4_calls > 0 && e.f4_unsat == 1);
+            ENSURE(e.m_proof == nullptr && e.m_elimination_proof == nullptr);
+#endif
         }
         static void native_matrix_certificates() {
             for (bool packed : {false, true}) for (bool lazy : {false, true}) {
@@ -1062,6 +1079,7 @@ void tst_finite_field() {
     test_certificates();
     ff::test_engine::native_certificate_paths();
     ff::test_engine::native_matrix_certificates();
+    ff::test_engine::native_f4_composition();
     ff::test_engine::adaptive_basis_storage();
     ff::test_engine::sparse_matrix_selection();
     ff::test_engine::work_accounting();

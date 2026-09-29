@@ -29,14 +29,18 @@ namespace ff {
     // refer to stable equation slots, including eliminated defining equations.
     struct elimination_observer {
         virtual ~elimination_observer() = default;
-        virtual void substitution(unsigned row, unsigned definition, polynomial const &before,
+        virtual unsigned substitution(unsigned row, unsigned definition, polynomial const &before,
                                   unsigned variable, polynomial const &value,
                                   rational const &pivot) = 0;
     };
+    struct certificate;
     struct polynomial_observer {
         virtual ~polynomial_observer() = default;
         virtual unsigned multiply(unsigned proof, rational const &coefficient, monomial const &factor) = 0;
         virtual unsigned add(unsigned left, unsigned right) = 0;
+        virtual unsigned remaining_nodes() const { return 0; }
+        virtual bool contradiction(polynomial const &) { return false; }
+        virtual bool import_f4(certificate const &, std::vector<polynomial> const &) { return false; }
     };
     struct exhausted {};
     // Exact, bounded memoization of basis computations. Entries contain only
@@ -92,6 +96,7 @@ namespace ff {
         bool bit_propagation, batch_enabled, sparse_enabled;
         basis_cache *memo = nullptr;
         polynomial_observer *m_proof = nullptr;
+        elimination_observer *m_elimination_proof = nullptr;
         unsigned proof_multiply(unsigned id, rational const &c, monomial const &mon);
         unsigned proof_add(unsigned a, unsigned b);
         unsigned m_bit_facts = 0, m_bit_rounds = 0;

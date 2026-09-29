@@ -38,11 +38,22 @@ if __name__ == '__main__':
                                   '(= (ff.mul x y) (as ff1 F))',
                                   '(= (ff.mul y y) (as ff2 F))'])
         for variant in variants:
-            result = subprocess.run([args.z3] + ['smt.ff.' + option for option in variant] + ['-in'],
+            result = subprocess.run([args.z3, 'smt.ff.f4=false'] + ['smt.ff.' + option for option in variant] + ['-in'],
                                     input=text + '(ff-certify :backend native)\n',
                                     text=True, capture_output=True, timeout=15)
             assert result.returncode == 0 and not result.stderr, result
             suite.check_both(text, result.stdout)
     print(f'{len(variants)*4} native scalar/matrix/storage variants independently checked')
+    for prime in [7, 65537, 2**255 - 19]:
+        text = suite.source(prime, [
+            '(= x (ff.add (ff.mul z z) (as ff1 F)))',
+            '(= (ff.mul x x) (as ff1 F))',
+            '(= (ff.mul x y) (as ff1 F))',
+            '(= (ff.mul y y) (as ff2 F))'],
+            extra='(declare-const z F)')
+        proof = native_run(args.z3, text)
+        suite.check_both(text, proof)
+        suite.rejected(suite.checker.verify, text.replace('(as ff2 F)', '(as ff1 F)'), proof)
+    print('3 composed elimination/F4 certificates independently checked')
     suite.run = native_run
     suite.main()
