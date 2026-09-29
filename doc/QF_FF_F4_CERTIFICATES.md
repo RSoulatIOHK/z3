@@ -126,6 +126,20 @@ Z3 additionally performs original-input binding and independent replay; the
 candidate's result means acceptance by the artifact's checker pipeline with
 its documented PAC-premise binding limitation. These contracts are not identical.
 
+![Certificate production and checking](qf-ff-f4-certificates/production-and-checking.png)
+
+[Production/checking vector PDF](qf-ff-f4-certificates/production-and-checking.pdf).
+The left panel measures successful production stages of these same runs:
+355 base, 356 PR2 and 362 candidate certificates. The right panel counts only
+complete checked pipelines: 354, 355 and 358. Production alone is not validation.
+The pinned cvc5 1.3.3/1.4.0/main binaries reject the artifact's `--ff-proof-pac`
+option; their ordinary-solving curves are not relabeled as certificate curves.
+
+A [fresh split-bug proof audit](qf-ff-split-proof-audit/README.md) confirms that
+the false-UNSAT reproducer does not yield a complete checked Alethe/PAC proof.
+Plain internal checking still admits its trusted steps; complete-proof checking
+rejects incompleteness, and Alethe export fails on unsupported operators.
+
 ![Whole-pipeline checked-proof cactus](qf-ff-f4-certificates/cactus.png)
 
 [Vector PDF](qf-ff-f4-certificates/cactus.pdf),

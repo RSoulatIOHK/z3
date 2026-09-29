@@ -1,0 +1,547 @@
+[
+  {
+    "binary": "cvc5-1.3.3",
+    "mode": "plain",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.3.3",
+      "--ff-solver=split",
+      "/Users/romainsoulat/z3/tests/finite_field/results/paper-artifacts/disagreements/7664b9fa2577c47a8008e4ded3a004f0fecbb82f589cae6a39871c3fa6b555d3/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-1.3.3",
+    "mode": "alethe",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.3.3",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "/Users/romainsoulat/z3/tests/finite_field/results/paper-artifacts/disagreements/7664b9fa2577c47a8008e4ded3a004f0fecbb82f589cae6a39871c3fa6b555d3/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(error \"Proof unsupported by Alethe: contains operator ff.add\"))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-1.3.3",
+    "mode": "pac",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.3.3",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--ff-proof-pac",
+      "--proof-granularity=dsl-rewrite",
+      "/Users/romainsoulat/z3/tests/finite_field/results/paper-artifacts/disagreements/7664b9fa2577c47a8008e4ded3a004f0fecbb82f589cae6a39871c3fa6b555d3/minimal.smt2"
+    ],
+    "returncode": 1,
+    "stdout": "",
+    "stderr": "(error \"Error in option parsing: can't understand option `--ff-proof-pac'\")\n\nPlease use --help to get help on command-line options.\n"
+  },
+  {
+    "binary": "cvc5-1.4.0",
+    "mode": "plain",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.4.0",
+      "--ff-solver=split",
+      "/Users/romainsoulat/z3/tests/finite_field/results/paper-artifacts/disagreements/7664b9fa2577c47a8008e4ded3a004f0fecbb82f589cae6a39871c3fa6b555d3/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-1.4.0",
+    "mode": "alethe",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.4.0",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "/Users/romainsoulat/z3/tests/finite_field/results/paper-artifacts/disagreements/7664b9fa2577c47a8008e4ded3a004f0fecbb82f589cae6a39871c3fa6b555d3/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(error \"Proof unsupported by Alethe: contains operator ff.add\"))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-1.4.0",
+    "mode": "pac",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.4.0",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--ff-proof-pac",
+      "--proof-granularity=dsl-rewrite",
+      "/Users/romainsoulat/z3/tests/finite_field/results/paper-artifacts/disagreements/7664b9fa2577c47a8008e4ded3a004f0fecbb82f589cae6a39871c3fa6b555d3/minimal.smt2"
+    ],
+    "returncode": 1,
+    "stdout": "",
+    "stderr": "(error \"Error in option parsing: can't understand option `--ff-proof-pac'\")\n\nPlease use --help to get help on command-line options.\n"
+  },
+  {
+    "binary": "cvc5-main-72f647e",
+    "mode": "plain",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-main-72f647e",
+      "--ff-solver=split",
+      "/Users/romainsoulat/z3/tests/finite_field/results/paper-artifacts/disagreements/7664b9fa2577c47a8008e4ded3a004f0fecbb82f589cae6a39871c3fa6b555d3/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-main-72f647e",
+    "mode": "alethe",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-main-72f647e",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "/Users/romainsoulat/z3/tests/finite_field/results/paper-artifacts/disagreements/7664b9fa2577c47a8008e4ded3a004f0fecbb82f589cae6a39871c3fa6b555d3/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(error \"Proof unsupported by Alethe: contains operator ff.add\"))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-main-72f647e",
+    "mode": "pac",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-main-72f647e",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--ff-proof-pac",
+      "--proof-granularity=dsl-rewrite",
+      "/Users/romainsoulat/z3/tests/finite_field/results/paper-artifacts/disagreements/7664b9fa2577c47a8008e4ded3a004f0fecbb82f589cae6a39871c3fa6b555d3/minimal.smt2"
+    ],
+    "returncode": 1,
+    "stdout": "",
+    "stderr": "(error \"Error in option parsing: can't understand option `--ff-proof-pac'\")\n\nPlease use --help to get help on command-line options.\n"
+  },
+  {
+    "binary": "cvc5-paper",
+    "mode": "plain",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-paper",
+      "--ff-solver=split",
+      "/Users/romainsoulat/z3/tests/finite_field/results/paper-artifacts/disagreements/7664b9fa2577c47a8008e4ded3a004f0fecbb82f589cae6a39871c3fa6b555d3/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-paper",
+    "mode": "alethe",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-paper",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "/Users/romainsoulat/z3/tests/finite_field/results/paper-artifacts/disagreements/7664b9fa2577c47a8008e4ded3a004f0fecbb82f589cae6a39871c3fa6b555d3/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(error \"Proof unsupported by Alethe: contains operator ff.bitsum\"))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-paper",
+    "mode": "pac",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-paper",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--ff-proof-pac",
+      "--proof-granularity=dsl-rewrite",
+      "/Users/romainsoulat/z3/tests/finite_field/results/paper-artifacts/disagreements/7664b9fa2577c47a8008e4ded3a004f0fecbb82f589cae6a39871c3fa6b555d3/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(error \"Proof unsupported by Alethe: contains operator ff.bitsum\"))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-1.4.0",
+    "mode": "nosimp",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.4.0",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--simplification=none",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(error \"Proof unsupported by Alethe: contains operator ff.add\"))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-main-72f647e",
+    "mode": "nosimp",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-main-72f647e",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--simplification=none",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(error \"Proof unsupported by Alethe: contains operator ff.add\"))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-paper",
+    "mode": "nosimp",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-paper",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--ff-proof-pac",
+      "--proof-granularity=dsl-rewrite",
+      "--simplification=none",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(error \"Proof unsupported by Alethe: contains operator ff.bitsum\"))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-1.4.0",
+    "mode": "nobits",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.4.0",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--no-ff-bitsum",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(error \"Proof unsupported by Alethe: contains operator ff.add\"))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-1.4.0",
+    "mode": "nosimp-nobits",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.4.0",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--simplification=none",
+      "--no-ff-bitsum",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(error \"Proof unsupported by Alethe: contains operator ff.add\"))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-1.4.0",
+    "mode": "strict",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.4.0",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--no-ff-bitsum",
+      "--check-proofs",
+      "--check-proofs-complete",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": -6,
+    "stdout": "",
+    "stderr": "Fatal failure within virtual void cvc5::internal::smt::ProofFinalCallback::finalize(std::shared_ptr<ProofNode>) at /Users/runner/work/cvc5/cvc5/src/smt/proof_final_callback.cpp:203\nInternal error detected The proof was incomplete due to a trust step with id PREPROCESS_FF_BITSUM.\n"
+  },
+  {
+    "binary": "cvc5-main-72f647e",
+    "mode": "nobits",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-main-72f647e",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--no-ff-bitsum",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(error \"Proof unsupported by Alethe: contains operator ff.add\"))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-main-72f647e",
+    "mode": "nosimp-nobits",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-main-72f647e",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--simplification=none",
+      "--no-ff-bitsum",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(error \"Proof unsupported by Alethe: contains operator ff.add\"))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-main-72f647e",
+    "mode": "strict",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-main-72f647e",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--no-ff-bitsum",
+      "--check-proofs",
+      "--check-proofs-complete",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": -6,
+    "stdout": "",
+    "stderr": "Fatal failure within virtual void cvc5::internal::smt::ProofFinalCallback::finalize(std::shared_ptr<ProofNode>) at /private/tmp/ff-cvc5-master-20260923/src/smt/proof_final_callback.cpp:203\nInternal error detected The proof was incomplete due to a trust step with id PREPROCESS_FF_BITSUM.\n"
+  },
+  {
+    "binary": "cvc5-paper",
+    "mode": "nobits",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-paper",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--ff-proof-pac",
+      "--proof-granularity=dsl-rewrite",
+      "--no-ff-bitsum",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(error \"Proof unsupported by Alethe: contains operator ff.bitsum\"))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-paper",
+    "mode": "nosimp-nobits",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-paper",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--ff-proof-pac",
+      "--proof-granularity=dsl-rewrite",
+      "--simplification=none",
+      "--no-ff-bitsum",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(error \"Proof unsupported by Alethe: contains operator ff.bitsum\"))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-paper",
+    "mode": "strict",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-paper",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--dump-proofs",
+      "--proof-format-mode=alethe",
+      "--ff-proof-pac",
+      "--proof-granularity=dsl-rewrite",
+      "--no-ff-bitsum",
+      "--check-proofs",
+      "--check-proofs-complete",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": -6,
+    "stdout": "",
+    "stderr": "Fatal failure within virtual void cvc5::internal::smt::ProofFinalCallback::finalize(std::shared_ptr<ProofNode>) at /private/tmp/ff-paper-comparison/psaccomani15-cvc5-fd1eaa1/src/smt/proof_final_callback.cpp:203\nInternal error detected The proof was incomplete due to a trust step with id PREPROCESS_FF_BITSUM.\n"
+  },
+  {
+    "binary": "cvc5-1.3.3",
+    "mode": "gb-control",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.3.3",
+      "--ff-solver=gb",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "sat\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-1.3.3",
+    "mode": "internal-check",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.3.3",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--check-proofs",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-1.3.3",
+    "mode": "raw-proof",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.3.3",
+      "--ff-solver=split",
+      "--dump-proofs",
+      "--proof-format-mode=none",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(let ((_let_1 (ff.add b #f2m3))) (let ((_let_2 (= _let_1 #f0m3))) (let ((_let_3 (ff.mul #f2m3 b))) (let ((_let_4 (ff.mul a b))) (let ((_let_5 (ff.add _let_4 a _let_3 #f2m3))) (let ((_let_6 (= _let_5 #f0m3))) (let ((_let_7 (= #f0m3 (ff.add #f2m3 _let_4 (ff.mul #f2m3 (ff.bitsum b a)))))) (let ((_let_8 (ff.add #f2m3 b))) (let ((_let_9 (= #f0m3 _let_8))) (let ((_let_10 (ff.add #f2m3 a _let_3 _let_4))) (let ((_let_11 (_let_6))) (let ((_let_12 (REFL :args (#f0m3)))) (let ((_let_13 (_let_2))) (SCOPE (SCOPE (CHAIN_M_RESOLUTION (NOT_AND (TRUST :args (THEORY_LEMMA (not (and _let_7 _let_9)) THEORY_FF))) (EQ_RESOLVE (ASSUME :args _let_13) (TRANS (CONG (ACI_NORM :args ((= _let_1 _let_8))) _let_12 :args _let_13) (DSL_REWRITE :args (eq-symm _let_8 #f0m3)))) (EQ_RESOLVE (ASSUME :args _let_11) (TRANS (TRANS (CONG (ACI_NORM :args ((= _let_5 _let_10))) _let_12 :args _let_11) (DSL_REWRITE :args (eq-symm _let_10 #f0m3))) (TRUST :args (PREPROCESS_FF_BITSUM (= (= #f0m3 _let_10) _let_7))))) :args (false (false false) (_let_9 _let_7))) :args (_let_6 _let_2)))))))))))))))))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-1.4.0",
+    "mode": "gb-control",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.4.0",
+      "--ff-solver=gb",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "sat\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-1.4.0",
+    "mode": "internal-check",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.4.0",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--check-proofs",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-1.4.0",
+    "mode": "raw-proof",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-1.4.0",
+      "--ff-solver=split",
+      "--dump-proofs",
+      "--proof-format-mode=none",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(let ((_let_1 (ff.add b #f2m3))) (let ((_let_2 (= _let_1 #f0m3))) (let ((_let_3 (ff.mul #f2m3 b))) (let ((_let_4 (ff.mul a b))) (let ((_let_5 (ff.add _let_4 a _let_3 #f2m3))) (let ((_let_6 (= _let_5 #f0m3))) (let ((_let_7 (= #f0m3 (ff.add #f2m3 _let_4 (ff.mul #f2m3 (ff.bitsum b a)))))) (let ((_let_8 (ff.add #f2m3 b))) (let ((_let_9 (= #f0m3 _let_8))) (let ((_let_10 (ff.add #f2m3 a _let_3 _let_4))) (let ((_let_11 (_let_6))) (let ((_let_12 (REFL :args (#f0m3)))) (let ((_let_13 (_let_2))) (SCOPE (SCOPE (CHAIN_M_RESOLUTION (NOT_AND (TRUST :args (THEORY_LEMMA (not (and _let_7 _let_9)) THEORY_FF))) (EQ_RESOLVE (ASSUME :args _let_13) (TRANS (CONG (ACI_NORM :args ((= _let_1 _let_8))) _let_12 :args _let_13) (DSL_REWRITE :args (eq-symm _let_8 #f0m3)))) (EQ_RESOLVE (ASSUME :args _let_11) (TRANS (TRANS (CONG (ACI_NORM :args ((= _let_5 _let_10))) _let_12 :args _let_11) (DSL_REWRITE :args (eq-symm _let_10 #f0m3))) (TRUST :args (PREPROCESS_FF_BITSUM (= (= #f0m3 _let_10) _let_7))))) :args (false (false false) (_let_9 _let_7))) :args (_let_6 _let_2)))))))))))))))))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-main-72f647e",
+    "mode": "gb-control",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-main-72f647e",
+      "--ff-solver=gb",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "sat\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-main-72f647e",
+    "mode": "internal-check",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-main-72f647e",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--check-proofs",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-main-72f647e",
+    "mode": "raw-proof",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-main-72f647e",
+      "--ff-solver=split",
+      "--dump-proofs",
+      "--proof-format-mode=none",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(let ((_let_1 (ff.add b #f2m3))) (let ((_let_2 (= _let_1 #f0m3))) (let ((_let_3 (ff.mul #f2m3 b))) (let ((_let_4 (ff.mul a b))) (let ((_let_5 (ff.add _let_4 a _let_3 #f2m3))) (let ((_let_6 (= _let_5 #f0m3))) (let ((_let_7 (= #f0m3 (ff.add #f2m3 _let_4 (ff.mul #f2m3 (ff.bitsum b a)))))) (let ((_let_8 (ff.add #f2m3 b))) (let ((_let_9 (= #f0m3 _let_8))) (let ((_let_10 (ff.add #f2m3 a _let_3 _let_4))) (let ((_let_11 (_let_6))) (let ((_let_12 (REFL :args (#f0m3)))) (let ((_let_13 (_let_2))) (SCOPE (SCOPE (CHAIN_M_RESOLUTION (NOT_AND (TRUST :args (THEORY_LEMMA (not (and _let_7 _let_9)) THEORY_FF))) (EQ_RESOLVE (ASSUME :args _let_13) (TRANS (CONG (ACI_NORM :args ((= _let_1 _let_8))) _let_12 :args _let_13) (DSL_REWRITE :args (eq-symm _let_8 #f0m3)))) (EQ_RESOLVE (ASSUME :args _let_11) (TRANS (TRANS (CONG (ACI_NORM :args ((= _let_5 _let_10))) _let_12 :args _let_11) (DSL_REWRITE :args (eq-symm _let_10 #f0m3))) (TRUST :args (PREPROCESS_FF_BITSUM (= (= #f0m3 _let_10) _let_7))))) :args (false (false false) (_let_9 _let_7))) :args (_let_6 _let_2)))))))))))))))))\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-paper",
+    "mode": "gb-control",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-paper",
+      "--ff-solver=gb",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "sat\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-paper",
+    "mode": "internal-check",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-paper",
+      "--ff-solver=split",
+      "--produce-proofs",
+      "--check-proofs",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n",
+    "stderr": ""
+  },
+  {
+    "binary": "cvc5-paper",
+    "mode": "raw-proof",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/multisolver-20260929/binaries/cvc5-paper",
+      "--ff-solver=split",
+      "--dump-proofs",
+      "--proof-format-mode=none",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2"
+    ],
+    "returncode": 0,
+    "stdout": "unsat\n(\n(let ((_let_1 (ff.add b #f2m3))) (let ((_let_2 (= _let_1 #f0m3))) (let ((_let_3 (ff.mul #f2m3 b))) (let ((_let_4 (ff.mul a b))) (let ((_let_5 (ff.add _let_4 a _let_3 #f2m3))) (let ((_let_6 (= _let_5 #f0m3))) (let ((_let_7 (= #f0m3 (ff.add _let_4 #f2m3 (ff.mul #f2m3 (ff.bitsum b a)))))) (let ((_let_8 (= #f0m3 _let_1))) (let ((_let_9 (ff.add a _let_4 #f2m3 _let_3))) (let ((_let_10 (= #f0m3 _let_9))) (let ((_let_11 (_let_6))) (SCOPE (SCOPE (CHAIN_M_RESOLUTION (NOT_AND (TRUST :args (THEORY_LEMMA (not (and _let_7 _let_8)) THEORY_FF))) (SYMM (ASSUME :args (_let_2))) (EQ_RESOLVE (ASSUME :args _let_11) (TRANS (TRANS (CONG (ACI_NORM :args ((= _let_5 _let_9))) (REFL :args (#f0m3)) :args _let_11) (FF_POLY_NORM_EQ (FF_POLY_NORM :args ((= (ff.mul #f1m3 (ff.add _let_9 (ff.neg #f0m3))) (ff.mul #f2m3 (ff.add #f0m3 (ff.neg _let_9)))))) :args ((= (= _let_9 #f0m3) _let_10)))) (TRUST :args (PREPROCESS_FF_BITSUM (= _let_10 _let_7))))) :args (false (false false) (_let_8 _let_7))) :args (_let_6 _let_2)))))))))))))))\n",
+    "stderr": ""
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "cvc5-1.3.3": {
+    "sha256": "1a4a2001012ff80a6ffc6a1a090e72d7283fe4de39b62cd65cc088dde12cbaa6",
+    "version": "This is cvc5 version 1.3.3 [git 8ff882e on branch HEAD]"
+  },
+  "cvc5-1.4.0": {
+    "sha256": "bda43ec593d7f8e0d48e356a384e80a2dc2234e797a4c57845d9d64e9ff48048",
+    "version": "cvc5 1.4.0 [git b432cd7 on branch HEAD]"
+  },
+  "cvc5-main-72f647e": {
+    "sha256": "bc089097beaa938e11ccf291e4bc41ba4b32ee2e6dcec66d5648c389f4adc7eb",
+    "version": "cvc5 1.4.1.dev+main@72f647e [git 72f647e on branch main]"
+  },
+  "cvc5-paper": {
+    "sha256": "336c22eeed5dbbb2d925fc39054f6c84898d9428902dc8e5c259c4aa7538ee53",
+    "version": "This is cvc5 version 1.3.4.dev"
+  }
+}

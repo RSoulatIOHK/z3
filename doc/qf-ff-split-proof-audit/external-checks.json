@@ -1,0 +1,58 @@
+[
+  {
+    "binary": "cvc5-1.3.3",
+    "returncode": 1,
+    "stdout": "invalid\n",
+    "stderr": "[ERROR] parser error: unexpected token: 'error' (on line 1, column 2)\n",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/fmcad-cvc5-comparison-20260924/binaries/carcara",
+      "check",
+      "/private/tmp/ff-pr-figures/split-check/cvc5-1.3.3.alethe",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2",
+      "--ff-pac-solver",
+      "/Users/romainsoulat/z3/tests/finite_field/results/fmcad-cvc5-comparison-20260924/binaries/ffpacheck"
+    ]
+  },
+  {
+    "binary": "cvc5-1.4.0",
+    "returncode": 1,
+    "stdout": "invalid\n",
+    "stderr": "[ERROR] parser error: unexpected token: 'error' (on line 1, column 2)\n",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/fmcad-cvc5-comparison-20260924/binaries/carcara",
+      "check",
+      "/private/tmp/ff-pr-figures/split-check/cvc5-1.4.0.alethe",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2",
+      "--ff-pac-solver",
+      "/Users/romainsoulat/z3/tests/finite_field/results/fmcad-cvc5-comparison-20260924/binaries/ffpacheck"
+    ]
+  },
+  {
+    "binary": "cvc5-main-72f647e",
+    "returncode": 1,
+    "stdout": "invalid\n",
+    "stderr": "[ERROR] parser error: unexpected token: 'error' (on line 1, column 2)\n",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/fmcad-cvc5-comparison-20260924/binaries/carcara",
+      "check",
+      "/private/tmp/ff-pr-figures/split-check/cvc5-main-72f647e.alethe",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2",
+      "--ff-pac-solver",
+      "/Users/romainsoulat/z3/tests/finite_field/results/fmcad-cvc5-comparison-20260924/binaries/ffpacheck"
+    ]
+  },
+  {
+    "binary": "cvc5-paper",
+    "returncode": 1,
+    "stdout": "invalid\n",
+    "stderr": "[ERROR] parser error: unexpected token: 'error' (on line 1, column 2)\n",
+    "command": [
+      "/Users/romainsoulat/z3/tests/finite_field/results/fmcad-cvc5-comparison-20260924/binaries/carcara",
+      "check",
+      "/private/tmp/ff-pr-figures/split-check/cvc5-paper.alethe",
+      "/private/tmp/ff-pr-figures/split-check/minimal.smt2",
+      "--ff-pac-solver",
+      "/Users/romainsoulat/z3/tests/finite_field/results/fmcad-cvc5-comparison-20260924/binaries/ffpacheck"
+    ]
+  }
+]
