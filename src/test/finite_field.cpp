@@ -572,6 +572,71 @@ static void check_field_arithmetic(rational const &p, unsigned rounds) {
     }
 }
 
+static void test_ff_f4_certificates() {
+    for (rational const &prime : {rational(7), rational::power_of_two(61) - rational(1),
+                                 rational::power_of_two(256) - rational(189)}) {
+        reslimit limit;
+        ff::engine e(prime, limit, 10000000);
+        // Nonconsecutive original IDs exercise dense-to-original proof mapping.
+        auto x = e.variable(9), y = e.variable(2), z = e.variable(6);
+        auto one = e.constant(rational(1));
+        std::vector<ff::polynomial> eqs{e.add(e.mul(x, y), one, rational(-1)),
+                                      e.mul(x, z), e.add(e.mul(y, z), one, rational(-1))};
+        ff::certificate proof;
+        ff::f4_config cfg;
+        ff::f4_stats stats;
+        std::vector<rational> values(10, rational(42));
+        std::set<unsigned> core;
+        auto charge = [](unsigned) {};
+        ENSURE(ff::f4_solve(prime, eqs, {}, 10, values, core, cfg, stats, charge, nullptr, &proof) == l_false);
+        ENSURE(stats.m_matrices > 0);
+        std::vector<ff::polynomial> nodes;
+        for (auto const &n : proof.nodes) {
+            auto id = nodes.size();
+            if (n.kind == ff::certificate::rule::input) {
+                ENSURE(n.left < eqs.size());
+                nodes.push_back(eqs[n.left]);
+            }
+            else if (n.kind == ff::certificate::rule::add) {
+                ENSURE(n.left < id && n.right < id);
+                nodes.push_back(e.add(nodes[n.left], nodes[n.right]));
+            }
+            else {
+                ENSURE(n.left < id);
+                ff::polynomial factor;
+                e.add_term(factor, n.factor, n.coefficient);
+                nodes.push_back(e.mul(nodes[n.left], factor));
+            }
+        }
+        ENSURE(proof.root < nodes.size() && nodes[proof.root] == one);
+        auto size = proof.nodes.size();
+        auto root = proof.root;
+        cfg.max_certificate_nodes = 0;
+        bool stopped = false;
+        try { ff::f4_solve(prime, eqs, {}, 10, values, core, cfg, stats, charge, nullptr, &proof); }
+        catch (ff::exhausted const &) { stopped = true; }
+        ENSURE(stopped && proof.nodes.size() == size && proof.root == root);
+        cfg.max_certificate_nodes = 100000;
+        ENSURE(ff::f4_solve(prime, {x}, {}, 10, values, core, cfg, stats, charge, nullptr, &proof) == l_undef);
+        ENSURE(proof.nodes.size() == size && proof.root == root && values[0] == rational(42));
+        // A field-only contradiction is not an ideal contradiction. Even with
+        // model/closure options enabled, proof mode must refuse rather than
+        // expose a model branch as an unconditional PAC input.
+        auto no_root = e.add(e.mul(x, x), one);
+        if (prime == rational(7)) {
+            ENSURE(ff::f4_solve(prime, {no_root}, {}, 10, values, core, cfg, stats, charge, nullptr, &proof) == l_undef);
+            ENSURE(proof.nodes.size() == size && proof.root == root);
+        }
+        stopped = false;
+        try { ff::f4_solve(prime, eqs, {}, 10, values, core, cfg, stats,
+                          [](unsigned) { throw ff::exhausted(); }, nullptr, &proof); }
+        catch (ff::exhausted const &) { stopped = true; }
+        ENSURE(stopped && proof.nodes.size() == size && proof.root == root);
+        ENSURE(ff::f4_solve(prime, eqs, {}, 10, values, core, cfg, stats, charge, nullptr, &proof) == l_false);
+    }
+    std::cout << "F4 certificates: matrix replay, original IDs, atomic failure, cancellation and root refusal\n";
+}
+
 static void test_ff_f4_guards() {
     reslimit limit;
     ff::engine e(rational(7), limit);
@@ -621,6 +686,7 @@ static void test_ff_f4_guards() {
 }
 
 static void test_ff_f4() {
+    test_ff_f4_certificates();
     test_ff_f4_guards();
     // Fixed-width arithmetic, including a modulus whose top limb exceeds
     // 2^63 (general CIOS path) and BN254 / BLS12-381 (no-carry path).
