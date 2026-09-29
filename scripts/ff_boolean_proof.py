@@ -438,7 +438,8 @@ def compact(g, literals, dag):
     return core, result
 
 
-def produce(original, z3, timeout):
+def produce(original, z3, timeout, backend="auto"):
+    require(backend in ("auto", "scalar", "f4"), "invalid certificate backend")
     import ff_proof_pipeline as pp
     start = time.monotonic(); g = Graph(original); base = Clauses(g); search = Search(base.clauses)
     lemmas = 0
@@ -469,7 +470,7 @@ def produce(original, z3, timeout):
         require(literals, 'no field conflict (possibly satisfiable)')
         case = Case(g, literals)
         remaining = timeout - (time.monotonic() - start); require(remaining > 0, 'Boolean pipeline timeout')
-        output = pp.run([str(z3), '-in'], remaining, case.normalized() + f'(ff-certify :timeout {max(1,int(remaining*900))})\n')['stdout']
+        output = pp.run([str(z3), '-in'], remaining, case.normalized() + pp.certificate_command(remaining, backend))['stdout']
         require(output.startswith('(ff-certificate\n'), 'field certificate unavailable: ' + output[:300].strip())
         core, dag = compact(g, literals, output)
         search.append(clause(-x for x in core), dict(rule='field', literals=core, certificate=dag))
@@ -593,8 +594,8 @@ def verify_export(original, proof):
     return files
 
 
-def produce_bundle(original, directory, z3, timeout):
-    proof = produce(original, z3, timeout)
+def produce_bundle(original, directory, z3, timeout, backend="auto"):
+    proof = produce(original, z3, timeout, backend)
     files = verify_export(original, proof)
     files['boolean-certificate.json'] = json.dumps(proof, separators=(',', ':')) + '\n'
     require(len(files['boolean-certificate.json']) <= 32*1024*1024, 'Boolean certificate size limit')
