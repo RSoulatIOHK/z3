@@ -152,7 +152,8 @@ Standalone reconstruction and independent checking are described in
 [Alethe/PAC pipeline](QF_FF_PROOF_PIPELINE.md). They do not imply native Z3
 `get-proof` support for the entire field solver. Mixed-theory proofs, root/field
 closure, uniqueness and small-field-search traces remain incomplete. Conflict
-premise sets alone are not certificates.
+premise sets alone are not certificates. F4 ideal derivations are supported by
+the standalone pipeline; see [the F4 proof guide](QF_FF_F4_CERTIFICATES.md).
 
 ## Validation and research artifacts
 
