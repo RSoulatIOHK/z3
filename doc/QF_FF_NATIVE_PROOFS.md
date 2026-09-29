@@ -80,6 +80,25 @@ scope checks, and C++ checks that close 24-layer circuits and zero-test examples
 before elimination/F4/basis search. The complete acceptance suite remains
 required after every implementation change.
 
+## Current measured acceptance
+
+The shared-uniqueness milestone passes all 33 acceptance checks, plus the two
+updated external Boolean suites (34 checked bundles each). On the complete
+390-distinct-input FMCAD corpus, at a 10-second whole-pipeline limit and four
+workers, native recording checks 355 proofs and published PR2 reconstruction
+also checks 355: six gains and six losses. Native recording produces 358 bundles,
+but three do not finish checking within the deadline. On 349 common checked
+inputs, the geometric mean native/published wall-time ratio is 1.112.
+Ordinary solving remains 390/390, with a before/after ratio of 0.997.
+
+The earlier 55-case regression screen improved from 14 checked with the previous
+native rewrite to 25 with shared uniqueness; the published baseline checks 20.
+That selected screen does not establish a full-corpus advantage. A follow-up
+ablation also identifies two cases where enabling uniqueness worsens Boolean
+proof search. The implementation remains experimental; these results do not
+justify replacing the published default. Detailed runs and figures remain in
+the separate research archive, not in the solver source tree.
+
 ## Release gates
 
 1. Add an independently checked regression for each supported inference and a
