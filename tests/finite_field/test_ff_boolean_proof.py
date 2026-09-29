@@ -7,6 +7,7 @@ from pathlib import Path
 import random
 import sys
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -52,7 +53,7 @@ def evaluate(g, assignment):
     return all(values[a] for a in g.assertions)
 
 
-def check_boolean_search():
+def check_boolean_search(factory=bp.Search):
     """Adjudicate SAT independently and replay every learned resolution clause."""
     rng = random.Random(926)
     clauses = [(1,), (-1,), (2,), (-2,), (1, 2), (1, -2), (-1, 2), (-1, -2)]
@@ -63,7 +64,7 @@ def check_boolean_search():
     checks, learned = 0, False
     for original in cases:
         original = [bp.clause(c) for c in original]
-        search = bp.Search(original)
+        search = factory(original)
         # Reuse the search after adding a blocking clause, as field lemmas do.
         added = []
         for _ in range(3):
@@ -101,14 +102,16 @@ def check_boolean_search():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ['z3','carcara','ffpacheck']: parser.add_argument('--'+name, required=True)
+    parser.add_argument('--backend', choices=['auto', 'native'], default='auto')
     args = parser.parse_args()
-    search_checks = check_boolean_search()
+    factory = (lambda clauses: bp.NativeSearch(clauses, args.z3, time.monotonic() + 10)) if args.backend == 'native' else bp.Search
+    search_checks = check_boolean_search(factory)
     checked, rejected, sat_count, unsat_count, unknown_count = 0, 0, 0, 0, 0
     with tempfile.TemporaryDirectory(prefix='ff-boolean-tests-') as temp:
         root = Path(temp)
         def certify(text):
             nonlocal checked
-            proof = bp.produce(text, args.z3, 10)
+            proof = bp.produce(text, args.z3, 10, backend=args.backend)
             files = bp.verify_export(text, proof)
             d = root / str(checked); d.mkdir()
             (d/'problem.smt2').write_text(text)
@@ -160,7 +163,7 @@ def main():
             chain = f'(define-fun t{i} () Bool (and t{i-1} t{i-1}))\n' + chain
         text = source(chain,extra='(define-fun t0 () Bool a)')
         g=bp.Graph(text); assert len(g.nodes) < 410
-        proof=bp.produce(text,args.z3,10); files=bp.verify_export(text,proof)
+        proof=bp.produce(text,args.z3,10,backend=args.backend); files=bp.verify_export(text,proof)
         assert len(files['proof.alethe']) < 1000000
         # Exhaustively adjudicate randomized mixed formulas over tiny fields.
         rng=random.Random(1919)
@@ -175,7 +178,7 @@ def main():
                 body=f'(and {rng.choice(terms)} (not {rng.choice(terms)}))'
                 text=source('(assert '+body+')',p); g=bp.Graph(text)
                 sat=any(evaluate(g,dict(zip(['a','b','x','y'],v))) for v in itertools.product([False,True],[False,True],range(p),range(p)))
-                try: proof=bp.produce(text,args.z3,3)
+                try: proof=bp.produce(text,args.z3,3,backend=args.backend)
                 except pp.fc.Invalid:
                     if sat: sat_count+=1
                     else: unknown_count+=1
@@ -207,7 +210,7 @@ def main():
             path.write_text(old)
         # No variable declaration can accidentally provide the modulus check.
         constant=source('(assert (= (as ff2 F) (as ff0 F)))',3)
-        proof=bp.produce(constant,args.z3,10)
+        proof=bp.produce(constant,args.z3,10,backend=args.backend)
         wrong=constant.replace('FiniteField 3','FiniteField 2')
         reject(lambda:bp.verify_export(wrong,proof));rejected+=1
         for text in [

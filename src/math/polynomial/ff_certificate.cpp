@@ -3,9 +3,10 @@
 #include "math/polynomial/ff_f4.h"
 #include <queue>
 #include <tuple>
+#include "util/util.h"
 
 namespace ff {
-    class certificate_builder {
+    class certificate_builder : public elimination_observer, public polynomial_observer {
         engine &e;
         certificate proof;
         unsigned max_nodes;
@@ -28,12 +29,75 @@ namespace ff {
             proof.nodes.push_back(std::move(n));
             return id;
         }
-        unsigned multiply(unsigned id, rational const &c, monomial const &m) {
+        unsigned multiply(unsigned id, rational const &c, monomial const &m) override {
             if (c.is_one() && m.empty()) return id;
             return record({certificate::rule::multiply, id, 0, c, m});
         }
-        unsigned add(unsigned a, unsigned b) {
+        unsigned add(unsigned a, unsigned b) override {
             return record({certificate::rule::add, a, b, rational(1), {}});
+        }
+        void finish_native(certificate &out) {
+            // Search may generate valid rows that do not participate in the
+            // final contradiction. Export only ancestors of the root; retaining
+            // dead rows needlessly makes checking depend on abandoned searches.
+            std::vector<bool> live(proof.nodes.size(), false);
+            std::vector<unsigned> pending{proof.root}, renamed(proof.nodes.size(), ~0u);
+            while (!pending.empty()) {
+                e.tick();
+                unsigned id = pending.back(); pending.pop_back();
+                if (live[id]) continue;
+                live[id] = true;
+                auto const &n = proof.nodes[id];
+                if (n.kind != certificate::rule::input) pending.push_back(n.left);
+                if (n.kind == certificate::rule::add) pending.push_back(n.right);
+            }
+            certificate compact;
+            for (unsigned id = 0; id < proof.nodes.size(); ++id) {
+                e.tick();
+                if (!live[id]) continue;
+                auto n = proof.nodes[id];
+                if (n.kind != certificate::rule::input) n.left = renamed[n.left];
+                if (n.kind == certificate::rule::add) n.right = renamed[n.right];
+                renamed[id] = compact.nodes.size();
+                compact.nodes.push_back(std::move(n));
+            }
+            compact.root = renamed[proof.root];
+            out = std::move(compact);
+        }
+        std::vector<unsigned> elimination_proofs;
+        void substitution(unsigned row, unsigned definition, polynomial const &before,
+                          unsigned variable, polynomial const &value,
+                          rational const &pivot) override {
+            unsigned id = elimination_proofs[row];
+            rational factor = mod(-e.inverse(pivot), e.p);
+            // For the defining equation d=c*(v-t), record
+            // f[v:=t] = f - (d/c)*sum_m a*m*sum_{i=0}^{k-1} v^(k-1-i)*t^i.
+            // This is the identity v^k-t^k=(v-t)*sum v^(k-1-i)*t^i;
+            // it covers repeated occurrences and nonlinear definitions without
+            // expanding a global multiplier or trusting substitution itself.
+            for (auto const &[mon, coefficient] : before) {
+                e.tick();
+                monomial rest;
+                unsigned degree = 0;
+                for (unsigned v : mon) {
+                    if (v == variable) ++degree;
+                    else rest.push_back(v);
+                }
+                if (!degree) continue;
+                polynomial power;
+                e.add_term(power, rest, mod(coefficient * factor, e.p));
+                for (unsigned i = 0; i < degree; ++i) {
+                    for (auto const &[m, c] : power) {
+                        e.tick();
+                        monomial multiplier = m;
+                        multiplier.insert(std::upper_bound(multiplier.begin(), multiplier.end(), variable),
+                                          degree - 1 - i, variable);
+                        id = add(id, multiply(elimination_proofs[definition], c, multiplier));
+                    }
+                    if (i + 1 < degree) power = e.mul(power, value);
+                }
+            }
+            elimination_proofs[row] = id;
         }
         row reduce(row f) {
             polynomial remainder;
@@ -120,11 +184,41 @@ namespace ff {
             return f4_solve(e.p, equations, {}, variables, values, conflict, cfg, stats,
                             charge, nullptr, &out) == l_false;
         }
-        bool run(std::vector<polynomial> const &equations, certificate &out, bool linear_first = false) {
+        bool run(std::vector<polynomial> const &equations, certificate &out, bool linear_first = false, bool native = false) {
             // Linear and sparse equations can eliminate variables before
             // nonlinear input rows create large intermediate polynomials.
             // This only changes search order: input nodes retain their original
             // equation indices, and the checker still replays every multiplier.
+            std::vector<polynomial> residual;
+            if (native) {
+                residual = equations;
+                for (unsigned i = 0; i < equations.size(); ++i)
+                    elimination_proofs.push_back(record({certificate::rule::input, i, 0, rational(1), {}}));
+                std::vector<polynomial> neqs;
+                std::vector<std::pair<unsigned, polynomial>> definitions;
+                // This is the same elimination routine called by solve_core,
+                // with evidence captured at each actual substitution. Residual
+                // equations retain their original slots and composed proofs.
+                lbool eliminated = e.eliminate(residual, neqs, definitions, this);
+                for (unsigned i = 0; i < residual.size(); ++i)
+                    residual[i].derivation = residual[i].empty() ? ~0u : elimination_proofs[i];
+                auto close = [&]() {
+                    for (auto const &f : residual) {
+                        if (f.size() != 1 || !f.begin()->first.empty()) continue;
+                        if (f.derivation == ~0u) return false;
+                        proof.root = multiply(f.derivation, e.inverse(f.begin()->second), {});
+                        finish_native(out);
+                        return true;
+                    }
+                    return false;
+                };
+                if (eliminated == l_false) return close();
+                // Record the native basis computation, including its actual
+                // pair schedule, autoreduction and chosen row representation.
+                flet<polynomial_observer*> recording(e.m_proof, this);
+                e.basis(residual);
+                return close();
+            }
             std::vector<std::tuple<unsigned, size_t, unsigned>> order;
             for (unsigned i = 0; i < equations.size(); ++i) {
                 unsigned degree = 0;
@@ -179,6 +273,8 @@ namespace ff {
             if (!found && scalar_exhausted) throw exhausted();
             return found;
         }
+        if (backend == certificate_backend::native)
+            return certificate_builder(arithmetic, max_nodes).run(equations, output, true, true);
         if (backend == certificate_backend::f4)
             return certificate_builder(arithmetic, max_nodes).run_f4(equations, output, ~0u);
         try {

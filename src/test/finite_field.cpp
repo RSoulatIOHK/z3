@@ -17,6 +17,72 @@
 
 namespace ff {
     struct test_engine {
+        static void native_certificate_paths() {
+            for (unsigned mode = 0; mode < 8; ++mode) {
+                reslimit limit;
+                engine e(rational(7), limit, 1000000, 4096, true, mode >= 3, false);
+                e.fused_reduction = mode == 1;
+                e.geobucket = mode == 2;
+                e.compact_matrix = mode == 4 || mode == 7;
+                e.lazy_matrix = mode == 5 || mode == 7;
+                e.sparse_matrix_reducers = mode == 6 || mode == 7;
+                e.gm_pairs = e.sugar_pairs = e.div_masks = e.small_coefficients = mode == 7;
+                auto x = e.variable(0), y = e.variable(1);
+                std::vector<polynomial> eqs{
+                    e.add(e.mul(x, x), e.constant(rational(-1))),
+                    e.add(e.mul(x, y), e.constant(rational(-1))),
+                    e.add(e.mul(y, y), e.constant(rational(-2)))};
+                certificate proof;
+                ENSURE(certify(e, eqs, proof, 100000, certificate_backend::native));
+                ENSURE(e.m_basis_calls == 1 && e.m_proof == nullptr);
+                if (mode == 1) ENSURE(e.m_fused_reductions > 0);
+                if (mode == 2) ENSURE(e.m_bucket_reductions > 0);
+                if (mode >= 3) ENSURE(e.m_matrix_rows > 0);
+                // Failure unwinds the recorder; later ordinary operations must
+                // never retain a pointer to a destroyed proof builder.
+                bool stopped = false;
+                try { certify(e, eqs, proof, 4, certificate_backend::native); }
+                catch (exhausted const &) { stopped = true; }
+                ENSURE(stopped && e.m_proof == nullptr);
+            }
+        }
+        static void native_matrix_certificates() {
+            for (bool packed : {false, true}) for (bool lazy : {false, true}) {
+                reslimit limit;
+                engine arithmetic(rational(7), limit, 1000000);
+                struct replay : polynomial_observer {
+                    engine &e;
+                    std::vector<polynomial> nodes;
+                    replay(engine &e) : e(e) {}
+                    unsigned multiply(unsigned id, rational const &c, monomial const &m) override {
+                        ENSURE(id < nodes.size());
+                        polynomial factor; e.add_term(factor, m, c);
+                        nodes.push_back(e.mul(nodes[id], factor));
+                        return nodes.size() - 1;
+                    }
+                    unsigned add(unsigned a, unsigned b) override {
+                        ENSURE(a < nodes.size() && b < nodes.size());
+                        nodes.push_back(e.add(nodes[a], nodes[b]));
+                        return nodes.size() - 1;
+                    }
+                } trace(arithmetic);
+                auto x = arithmetic.variable(10), z = arithmetic.variable(20);
+                auto dense = arithmetic.add(arithmetic.add(x, arithmetic.variable(5)), arithmetic.variable(4));
+                auto sparse = arithmetic.add(x, arithmetic.variable(0));
+                auto input = arithmetic.mul(x, z);
+                trace.nodes = {dense, sparse, input};
+                dense.derivation = 0; sparse.derivation = 1; input.derivation = 2;
+                engine e(rational(7), limit, 1000000);
+                e.compact_matrix = packed; e.lazy_matrix = lazy; e.sparse_matrix_reducers = true;
+                e.m_proof = &trace;
+                auto rows = e.batch_reduce({input}, {dense, sparse});
+                e.m_proof = nullptr;
+                ENSURE(rows.size() == 1 && rows[0].derivation < trace.nodes.size());
+                ENSURE(rows[0] == trace.nodes[rows[0].derivation]);
+                ENSURE(e.m_sparse_matrix_reducers > 0);
+                if (lazy) ENSURE(e.m_lazy_matrix_reducers > 0);
+            }
+        }
         static void adaptive_basis_storage() {
             for (rational const &prime : {rational(7), rational("21888242871839275222246405745257275088548364400416034343698204186575808495617")}) {
                 reslimit limit;
@@ -495,28 +561,30 @@ static void test_ff_scalar_recovery() {
 
 static void test_certificates() {
     for (rational const &prime : {rational(2), rational(7), rational("21888242871839275222246405745257275088548364400416034343698204186575808495617")}) {
-        reslimit limit;
-        ff::engine e(prime, limit, 1000000);
-        auto x = e.variable(0), y = e.variable(1), one = e.constant(rational(1));
-        std::vector<ff::polynomial> equations{e.add(e.mul(x, y), one, rational(-1)),
-            e.add(e.mul(x, e.add(y, one)), one, rational(-1))};
-        auto original = equations;
-        ff::certificate proof;
-        ENSURE(ff::certify(e, equations, proof));
-        ENSURE(equations == original && !proof.nodes.empty());
-        auto size = proof.nodes.size();
-        unsigned root = proof.root;
-        // Failure must leave the caller's previous successful object intact.
-        bool exhausted = false;
-        try { ff::certify(e, equations, proof, 0); } catch (ff::exhausted const &) { exhausted = true; }
-        ENSURE(exhausted && proof.nodes.size() == size && proof.root == root);
-        ENSURE(!ff::certify(e, {x}, proof));
-        ENSURE(proof.nodes.size() == size && proof.root == root);
-        limit.inc_cancel(); exhausted = false;
-        try { ff::certify(e, equations, proof); } catch (ff::exhausted const &) { exhausted = true; }
-        limit.dec_cancel();
-        ENSURE(exhausted && proof.nodes.size() == size && proof.root == root);
-        ENSURE(ff::certify(e, equations, proof));
+        for (auto backend : {ff::certificate_backend::automatic, ff::certificate_backend::native}) {
+            reslimit limit;
+            ff::engine e(prime, limit, 1000000);
+            auto x = e.variable(0), y = e.variable(1), one = e.constant(rational(1));
+            std::vector<ff::polynomial> equations{e.add(e.mul(x, y), one, rational(-1)),
+                e.add(e.mul(x, e.add(y, one)), one, rational(-1))};
+            auto original = equations;
+            ff::certificate proof;
+            ENSURE(ff::certify(e, equations, proof, 100000, backend));
+            ENSURE(equations == original && !proof.nodes.empty());
+            auto size = proof.nodes.size();
+            unsigned root = proof.root;
+            // Failure must leave the caller's previous successful object intact.
+            bool exhausted = false;
+            try { ff::certify(e, equations, proof, 0, backend); } catch (ff::exhausted const &) { exhausted = true; }
+            ENSURE(exhausted && proof.nodes.size() == size && proof.root == root);
+            ENSURE(!ff::certify(e, {x}, proof, 100000, backend));
+            ENSURE(proof.nodes.size() == size && proof.root == root);
+            limit.inc_cancel(); exhausted = false;
+            try { ff::certify(e, equations, proof, 100000, backend); } catch (ff::exhausted const &) { exhausted = true; }
+            limit.dec_cancel();
+            ENSURE(exhausted && proof.nodes.size() == size && proof.root == root);
+            ENSURE(ff::certify(e, equations, proof, 100000, backend));
+        }
     }
     // More independent rows than the retained basis cap, followed by a
     // contradiction: fallback can change order without changing input IDs.
@@ -992,6 +1060,8 @@ void tst_finite_field() {
     test_ff_tiny();
     test_ff_f4();
     test_certificates();
+    ff::test_engine::native_certificate_paths();
+    ff::test_engine::native_matrix_certificates();
     ff::test_engine::adaptive_basis_storage();
     ff::test_engine::sparse_matrix_selection();
     ff::test_engine::work_accounting();

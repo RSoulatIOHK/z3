@@ -16,12 +16,13 @@ namespace ff {
         unsigned root = 0;
     };
 
-    enum class certificate_backend { scalar, f4, automatic };
+    enum class certificate_backend { scalar, f4, native, automatic };
 
     // Bounded reconstruction from the original polynomial equations.
     // true witnesses 1 in their ideal. false means no certificate, never SAT.
     // Exhaustion propagates; output is replaced only on success. No cache,
-    // field axioms, substitutions, sampled models or unproved facts are used.
+    // field axioms, sampled models or unproved facts are used. The native backend
+    // records substitutions performed by the shared solver elimination stage.
     bool certify(engine &arithmetic, std::vector<polynomial> const &equations,
                  certificate &output, unsigned max_nodes = 100000,
                  certificate_backend backend = certificate_backend::automatic);

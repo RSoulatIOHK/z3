@@ -317,6 +317,111 @@ class Search:
         return False, self.activate(self.resolution(left, right, -pivot))
 
 
+class NativeSearch(Search):
+    """Use native CDCL, then elaborate its clause evidence into resolution.
+
+    Only independently reconstructed RUP consequences enter the proof. Native
+    clauses are never promoted to assumptions, even if labelled input by SAT.
+    """
+    def __init__(self, clauses, z3, deadline):
+        super().__init__(clauses)
+        self.z3, self.deadline = z3, deadline
+
+    def rup(self, candidate):
+        if candidate in self.by_clause:
+            return self.activate(self.by_clause[candidate])
+        assignment = {abs(x): x < 0 for x in candidate}
+        reasons, trail = {}, []
+        while True:
+            changed = False
+            for index in self.active:
+                c = self.clauses[index]
+                self.work += len(c) + 1
+                require(self.work <= 10000000, 'native Boolean replay work limit')
+                if any(assignment.get(abs(x)) == (x > 0) for x in c): continue
+                unknown = [x for x in c if abs(x) not in assignment]
+                if not unknown:
+                    result = index
+                    for lit in reversed(trail):
+                        if -lit in self.clauses[result]:
+                            result = self.resolution(result, reasons[abs(lit)], -lit)
+                    require(set(self.clauses[result]) <= set(candidate), 'native RUP conclusion mismatch')
+                    # A stronger subclause is sufficient and needs no trusted
+                    # weakening step; subsequent RUP checks can use it directly.
+                    self.by_clause[candidate] = result
+                    return self.activate(result)
+                if len(unknown) == 1:
+                    lit = unknown[0]
+                    assignment[abs(lit)] = lit > 0
+                    reasons[abs(lit)] = index
+                    trail.append(lit)
+                    changed = True
+            require(changed, 'native SAT step is not supported by RUP replay')
+
+    def search(self):
+        import ff_proof_pipeline as pp
+        remaining = self.deadline - time.monotonic()
+        require(remaining > 0, 'Boolean pipeline timeout')
+        variables = sorted({abs(x) for i in self.active for x in self.clauses[i]})
+        names = {f'b{i}': i for i in variables}
+        text = '(set-logic QF_UF)\n' + ''.join(f'(declare-const {name} Bool)\n' for name in names)
+        for index in self.active:
+            c = self.clauses[index]
+            terms = [f'b{x}' if x > 0 else f'(not b{-x})' for x in c]
+            body = 'false' if not terms else terms[0] if len(terms) == 1 else '(or ' + ' '.join(terms) + ')'
+            text += f'(assert {body})\n'
+        text += f'(ff-boolean-certify :timeout {max(1, int(remaining * 900))})\n'
+        require(len(text) < 32 * 1024 * 1024, 'native Boolean input size limit')
+        output = pp.run([str(self.z3), '-in'], remaining, text)['stdout']
+        objects = fc.parse(output)
+        require(len(objects) == 1 and isinstance(objects[0], list), 'invalid native SAT response')
+        obj = objects[0]
+        require(len(obj) == 9 and obj[0] == 'ff-boolean-result' and
+                obj[1::2] == [':status', ':variables', ':model', ':clauses'], 'invalid native SAT response')
+        status, native_names, model, trace = obj[2::2]
+        require(isinstance(native_names, list) and all(isinstance(x, str) for x in native_names) and
+                len(set(native_names)) == len(native_names) and
+                set(native_names) == set(names), 'native SAT variable binding mismatch')
+        mapping = {i + 1: names[name] for i, name in enumerate(native_names)}
+        if status == 'sat':
+            require(isinstance(model, list) and len(model) == len(native_names) and
+                    all(x in ('true', 'false') for x in model), 'invalid native SAT model')
+            assignment = {mapping[i + 1]: value == 'true' for i, value in enumerate(model)}
+            require(all(any(assignment[abs(x)] == (x > 0) for x in self.clauses[i]) for i in self.active),
+                    'native SAT model does not satisfy Boolean clauses')
+            # Keep a partial model that still satisfies every clause. This
+            # avoids sending irrelevant total-model field assignments to the
+            # algebra layer; no clause may lose its last satisfying literal.
+            supports = {v: [] for v in assignment}
+            counts = {}
+            for index in self.active:
+                satisfied = [abs(x) for x in self.clauses[index] if assignment[abs(x)] == (x > 0)]
+                counts[index] = len(satisfied)
+                for v in satisfied: supports[v].append(index)
+            for v in sorted(assignment, reverse=True):
+                if all(counts[i] > 1 for i in supports[v]):
+                    for i in supports[v]: counts[i] -= 1
+                    del assignment[v]
+            return True, assignment
+        require(status == 'unsat' and isinstance(trace, list) and len(trace) <= 100000,
+                'native Boolean search incomplete')
+        for raw in trace:
+            require(isinstance(raw, list), 'invalid native SAT clause')
+            values = []
+            for atom in raw:
+                require(isinstance(atom, str) and atom.lstrip('-').isdigit(), 'invalid native SAT literal')
+                lit = int(atom)
+                require(abs(lit) in mapping, 'unbound native SAT literal')
+                values.append(mapping[abs(lit)] * (1 if lit > 0 else -1))
+            unique = set(values)
+            if any(-lit in unique for lit in unique): continue  # tautology has no useful consequences
+            index = self.rup(clause(values))
+            if not self.clauses[index]: return False, index
+        # Some native UNSAT paths finish with a unit conflict rather than a
+        # separately emitted empty clause. It must still replay by propagation.
+        return False, self.rup(())
+
+
 class Case:
     """Independent polynomial view of precisely the lemma's field literals."""
     def __init__(self, g, literals):
@@ -438,10 +543,13 @@ def compact(g, literals, dag):
     return core, result
 
 
-def produce(original, z3, timeout, backend="auto"):
-    require(backend in ("auto", "scalar", "f4"), "invalid certificate backend")
+def produce(original, z3, timeout, backend="auto", boolean_backend="auto"):
+    require(backend in ("auto", "scalar", "f4", "native"), "invalid certificate backend")
+    require(boolean_backend in ("auto", "native", "legacy"), "invalid Boolean backend")
     import ff_proof_pipeline as pp
-    start = time.monotonic(); g = Graph(original); base = Clauses(g); search = Search(base.clauses)
+    start = time.monotonic(); g = Graph(original); base = Clauses(g)
+    native = boolean_backend == "native" or (boolean_backend == "auto" and backend == "native")
+    search = NativeSearch(base.clauses, z3, start + timeout) if native else Search(base.clauses)
     lemmas = 0
     while True:
         require(time.monotonic() - start < timeout, 'Boolean pipeline timeout')
@@ -594,8 +702,8 @@ def verify_export(original, proof):
     return files
 
 
-def produce_bundle(original, directory, z3, timeout, backend="auto"):
-    proof = produce(original, z3, timeout, backend)
+def produce_bundle(original, directory, z3, timeout, backend="auto", boolean_backend="auto"):
+    proof = produce(original, z3, timeout, backend, boolean_backend)
     files = verify_export(original, proof)
     files['boolean-certificate.json'] = json.dumps(proof, separators=(',', ':')) + '\n'
     require(len(files['boolean-certificate.json']) <= 32*1024*1024, 'Boolean certificate size limit')

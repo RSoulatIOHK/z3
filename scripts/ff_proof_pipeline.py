@@ -305,19 +305,20 @@ def prepare_profile(original):
 
 
 def certificate_command(timeout, backend="auto"):
-    fc.require(backend in ("auto", "scalar", "f4"), "invalid certificate backend")
+    fc.require(backend in ("auto", "scalar", "f4", "native"), "invalid certificate backend")
     # Omitting auto preserves compatibility with pre-backend-selector binaries.
     option = "" if backend == "auto" else f" :backend {backend}"
     return f"(ff-certify{option} :timeout {max(1, int(timeout * 900))})\n"
 
 
-def produce_bundle(original, directory, z3, timeout=10, prepared=None, backend="auto"):
-    fc.require(backend in ("auto", "scalar", "f4"), "invalid certificate backend")
+def produce_bundle(original, directory, z3, timeout=10, prepared=None, backend="auto", boolean_backend="auto"):
+    fc.require(backend in ("auto", "scalar", "f4", "native"), "invalid certificate backend")
+    fc.require(boolean_backend in ("auto", "native", "legacy"), "invalid Boolean backend")
     profile, normalized = prepare_profile(original) if prepared is None else prepared
     directory = Path(directory)
     if profile == 'boolean':
         import ff_boolean_proof as bp
-        count = bp.produce_bundle(original, directory, z3, timeout, backend)
+        count = bp.produce_bundle(original, directory, z3, timeout, backend, boolean_backend)
         return dict(profile='z3-ff-alethe-pac-v2', field_lemmas=count)
     cmd = normalized + certificate_command(timeout, backend)
     result = run([str(z3), '-in'], timeout, cmd)
@@ -360,7 +361,8 @@ def main():
     parser.add_argument('--carcara', type=Path, required=True)
     parser.add_argument('--ffpacheck', type=Path, required=True)
     parser.add_argument('--timeout', type=float, default=10, help='seconds per external stage')
-    parser.add_argument('--backend', choices=['auto', 'scalar', 'f4'], default='auto', help='bounded polynomial certificate search')
+    parser.add_argument('--backend', choices=['auto', 'scalar', 'f4', 'native'], default='auto', help='bounded polynomial certificate search')
+    parser.add_argument('--boolean-backend', choices=['auto', 'native', 'legacy'], default='auto', help='Boolean certificate search; auto follows the polynomial backend')
     parser.add_argument('--check', action='store_true', help='recheck an existing bundle; never regenerate proof bytes')
     args = parser.parse_args()
     start = time.monotonic()
@@ -373,10 +375,12 @@ def main():
             prepared = prepare_profile(original)
             args.out.mkdir(parents=True, exist_ok=False)
             (args.out / 'problem.smt2').write_text(original)
-            results.update(produce_bundle(original, args.out, args.z3.resolve(), args.timeout, prepared, args.backend))
+            results.update(produce_bundle(original, args.out, args.z3.resolve(), args.timeout, prepared, args.backend, args.boolean_backend))
         results.update(check_bundle(args.out.resolve(), args.carcara.resolve(), args.ffpacheck.resolve(), args.timeout))
         results['status'] = 'checked'
-        if not args.check: results['certificate_backend'] = args.backend
+        if not args.check:
+            results['certificate_backend'] = args.backend
+            results['boolean_backend'] = args.boolean_backend
         results['profile'] = 'z3-ff-alethe-pac-v2' if (args.out / 'boolean-certificate.json').exists() else 'z3-ff-alethe-pac-v1'
         results['tested_checker_sources'] = dict(carcara=CARCARA_REVISION, ffpacheck=FFPACHECK_REVISION,
             patch='tests/finite_field/proof_checkers/ffpacheck-completion.patch')
