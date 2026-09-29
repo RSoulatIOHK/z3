@@ -28,7 +28,7 @@ as holes. Lean checking is not implemented by this work.
 | F4 basis (`ff_f4.cpp`) | Native engine invokes the recording backend and composes residual-input evidence with preceding substitutions |
 | Basis reuse | Still refuses recording; cache entries need replayable, correctly scoped evidence |
 | AST preprocessing (`ff_simplify_tactic.cpp`) | Rewrites, solved equations, zero-test rewrites and compact definitions need checked connections to original assertions |
-| Uniqueness (`ff_unique_tactic.cpp`) | Class merges, assigned values, digit injectivity, zero tests and Boolean branches need local lemmas and branch closure evidence |
+| Uniqueness (`ff_unique_tactic.cpp`, shared `ff_unique.h`) | Ring-only recording implemented for class merges, assigned values, matching linear definitions and zero tests with distinct outputs. Digit injectivity, coincident-output zero tests and Boolean branches still need evidence |
 | Bit reasoning (`propagate_bits`, `small_bits`) | Boolean premises, no-wrap bounds and exhaustive assignment coverage must be recorded |
 | Finite-field roots and completion | Frobenius axioms, quotient/minimal-polynomial derivations, root completeness and branch closure need proof rules |
 | Tiny-field search (`ff_tiny.cpp`) | Domain pruning and exhaustive closure need local explanations |
@@ -40,6 +40,45 @@ SAT witness probes do not need refutation certificates: they can only establish
 SAT after independent model checking. Failed or incomplete probes cannot close
 an UNSAT branch. Constant contradictions must retain the derivation of the
 constant, including when an earlier transformation made the equation constant.
+
+## Shared uniqueness recording
+
+The native certificate path now invokes the same propagation core as `ff-unique`
+before entering `engine::solve`. Each union edge proves `v-parent[v]=0`, each
+assigned value proves `root-value=0`, and canonicalization composes these
+identities with exact substitution evidence. Old definition keys remain valid
+identities and are reduced through the current class state before a merge.
+For `a*y+r=0` and `b*z+s=0` with `-r/a=-s/b`, their normalized difference proves
+`y-z=0` without globally expanding the circuit.
+
+Zero-test matching also has a ring derivation. For a common monic expression `M`,
+let the four proved equations be `A=y-c+alpha*z*M`, `B=t-c+beta*w*M`,
+`C=(y-d)*M`, and `D=(t-d)*M`. Then
+
+```
+(y-d)*B - (t-d)*A - beta*w*C + alpha*z*D = (d-c)*(y-t).
+```
+
+When `d!=c`, multiplication by its inverse proves the equality. When `d==c`,
+this identity is insufficient; recording deliberately skips that rule.
+Digit inference and branches likewise remain disabled with an observer.
+No new trusted checker rule or original-input axiom is introduced.
+
+`ff-certify :backend native :unique false` disables this stage for ablation.
+It is not yet a proof of arbitrary `ff-unique` tactic executions or normal
+`check-sat`: the shared core's supported subset runs on normalized input
+polynomials. Native AST preprocessing and full SAT/theory integration remain
+separate open work. A stalled local attempt leaves input equations unchanged;
+its work and valid unused DAG nodes remain charged to the same global budget.
+The published `auto` reconstruction backend and normal solver defaults are
+unchanged.
+
+Regression coverage includes 69 independently checked uniqueness proofs (five
+fields through 521 bits, non-unit pivots, repeated powers, reordered equations,
+stale keys and zero tests), changed-premise rejection, SAT controls, incremental
+scope checks, and C++ checks that close 24-layer circuits and zero-test examples
+before elimination/F4/basis search. The complete acceptance suite remains
+required after every implementation change.
 
 ## Release gates
 

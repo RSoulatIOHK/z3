@@ -17,6 +17,58 @@
 
 namespace ff {
     struct test_engine {
+        static void native_uniqueness_certificates() {
+            for (rational const &p : {rational(2), rational(7), rational("65537")}) {
+                reslimit limit;
+                engine e(p, limit, 1000000);
+                auto one = e.constant(rational(1));
+                auto left = e.variable(0), right = e.variable(1);
+                std::vector<polynomial> eqs{e.add(left, right, rational(-1))};
+                for (unsigned i = 0; i < 24; ++i) {
+                    auto next_left = e.variable(2 + 2*i), next_right = e.variable(3 + 2*i);
+                    eqs.push_back(e.add(next_left, e.add(e.mul(left, left), one), rational(-1)));
+                    eqs.push_back(e.add(next_right, e.add(e.mul(right, right), one), rational(-1)));
+                    left = next_left; right = next_right;
+                }
+                eqs.push_back(e.add(e.mul(e.add(left, right, rational(-1)), e.variable(50)), one, rational(-1)));
+                certificate proof;
+                ENSURE(certify(e, eqs, proof, 100000, certificate_backend::native));
+                // This must close in shared uniqueness, not accidentally pass
+                // because a later elimination or basis backend solved the fixture.
+                ENSURE(e.m_eliminations == 0 && e.m_basis_calls == 0 && e.f4_calls == 0);
+                ENSURE(e.m_proof == nullptr && e.m_elimination_proof == nullptr);
+                engine replay(p, limit, 10000000);
+                std::vector<polynomial> nodes;
+                for (auto const &n : proof.nodes) {
+                    if (n.kind == certificate::rule::input) nodes.push_back(eqs.at(n.left));
+                    else if (n.kind == certificate::rule::add)
+                        nodes.push_back(replay.add(nodes.at(n.left), nodes.at(n.right)));
+                    else {
+                        polynomial factor;
+                        replay.add_term(factor, n.factor, n.coefficient);
+                        nodes.push_back(replay.mul(nodes.at(n.left), factor));
+                    }
+                }
+                ENSURE(nodes.at(proof.root) == one);
+            }
+            {
+                reslimit limit;
+                engine e(rational(7), limit, 1000000);
+                auto x = e.variable(0), y = e.variable(1), z = e.variable(2);
+                auto t = e.variable(3), w = e.variable(4), u = e.variable(5);
+                auto S = e.add(e.mul(x, x), x, rational(-1));
+                std::vector<polynomial> eqs{
+                    e.add(e.add(y, e.mul(z, S)), e.constant(rational(-3))),
+                    e.mul(e.add(y, e.constant(rational(-5))), S),
+                    e.add(e.add(t, e.scale(e.mul(w, S), rational(5))), e.constant(rational(-3))),
+                    e.scale(e.mul(e.add(t, e.constant(rational(-5))), S), rational(5)),
+                    e.add(e.mul(e.add(y, t, rational(-1)), u), e.constant(rational(-1)))};
+                certificate proof;
+                ENSURE(certify(e, eqs, proof, 100000, certificate_backend::native));
+                ENSURE(e.m_eliminations == 0 && e.m_basis_calls == 0 && e.f4_calls == 0);
+            }
+            std::cout << "Native uniqueness: 24-layer circuit identity, no basis/elimination, complete DAG replay over three fields\n";
+        }
         static void native_certificate_paths() {
             for (unsigned mode = 0; mode < 8; ++mode) {
                 reslimit limit;
@@ -1077,6 +1129,7 @@ void tst_finite_field() {
     test_ff_tiny();
     test_ff_f4();
     test_certificates();
+    ff::test_engine::native_uniqueness_certificates();
     ff::test_engine::native_certificate_paths();
     ff::test_engine::native_matrix_certificates();
     ff::test_engine::native_f4_composition();

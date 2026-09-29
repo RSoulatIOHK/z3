@@ -22,8 +22,10 @@ namespace ff {
     // true witnesses 1 in their ideal. false means no certificate, never SAT.
     // Exhaustion propagates; output is replaced only on success. No cache,
     // field axioms, sampled models or unproved facts are used. The native backend
-    // records substitutions performed by the shared solver elimination stage.
+    // records shared uniqueness, native elimination and basis operations. The
+    // native_unique switch only disables the shared propagation stage for ablation.
     bool certify(engine &arithmetic, std::vector<polynomial> const &equations,
                  certificate &output, unsigned max_nodes = 100000,
-                 certificate_backend backend = certificate_backend::automatic);
+                 certificate_backend backend = certificate_backend::automatic,
+                 bool native_unique = true);
 }

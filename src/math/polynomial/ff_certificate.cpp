@@ -1,12 +1,13 @@
 #include "math/polynomial/ff_certificate.h"
 #include <algorithm>
 #include "math/polynomial/ff_f4.h"
+#include "math/polynomial/ff_unique.h"
 #include <queue>
 #include <tuple>
 #include "util/util.h"
 
 namespace ff {
-    class certificate_builder : public elimination_observer, public polynomial_observer {
+    class certificate_builder : public elimination_observer, public polynomial_observer, public ff_unique::observer {
         engine &e;
         certificate proof;
         unsigned max_nodes;
@@ -113,7 +114,14 @@ namespace ff {
         unsigned substitution(unsigned row, unsigned definition, polynomial const &before,
                           unsigned variable, polynomial const &value,
                           rational const &pivot) override {
-            unsigned id = elimination_proofs[row];
+            unsigned id = substitute_identity(elimination_proofs[row], elimination_proofs[definition],
+                                              before, variable, value, pivot);
+            elimination_proofs[row] = id;
+            return id;
+        }
+        unsigned substitute_identity(unsigned id, unsigned definition, polynomial const &before,
+                                     unsigned variable, polynomial const &value, rational const &pivot) {
+            if (id == ~0u || definition == ~0u) throw exhausted();
             rational factor = mod(-e.inverse(pivot), e.p);
             // For the defining equation d=c*(v-t), record
             // f[v:=t] = f - (d/c)*sum_m a*m*sum_{i=0}^{k-1} v^(k-1-i)*t^i.
@@ -137,13 +145,88 @@ namespace ff {
                         monomial multiplier = m;
                         multiplier.insert(std::upper_bound(multiplier.begin(), multiplier.end(), variable),
                                           degree - 1 - i, variable);
-                        id = add(id, multiply(elimination_proofs[definition], c, multiplier));
+                        id = add(id, multiply(definition, c, multiplier));
                     }
                     if (i + 1 < degree) power = e.mul(power, value);
                 }
             }
-            elimination_proofs[row] = id;
             return id;
+        }
+        unsigned scale(unsigned id, rational const &c) override {
+            if (id == ~0u) throw exhausted();
+            return multiply(id, c, {});
+        }
+        unsigned sum(unsigned a, unsigned b) override {
+            if (a == ~0u || b == ~0u) throw exhausted();
+            return add(a, b);
+        }
+        static polynomial to_polynomial(ff_unique::poly const &f) {
+            polynomial r;
+            r.insert(f.begin(), f.end());
+            r.derivation = f.derivation;
+            return r;
+        }
+        static ff_unique::poly to_unique(polynomial const &f) {
+            ff_unique::poly r;
+            r.insert(f.begin(), f.end());
+            r.derivation = f.derivation;
+            return r;
+        }
+        ff_unique::poly substitute(ff_unique::poly const &row, unsigned variable,
+                                   ff_unique::poly const &definition) override {
+            polynomial before = to_polynomial(row), value;
+            auto pivot = definition.find(monomial{variable});
+            if (pivot == definition.end() || !pivot->second.is_one()) throw exhausted();
+            for (auto const &[m, c] : definition) {
+                if (m == monomial{variable}) continue;
+                if (std::find(m.begin(), m.end(), variable) != m.end()) throw exhausted();
+                e.add_term(value, m, mod(-c, e.p));
+            }
+            // No synthetic input is introduced: the normalized definition has
+            // an existing proof handle, and the same substitution identity used
+            // by wire elimination connects the result to the original row.
+            auto result = e.substitute(before, variable, value);
+            result.derivation = substitute_identity(row.derivation, definition.derivation,
+                                                    before, variable, value, rational(1));
+            return to_unique(result);
+        }
+        void conflict(ff_unique::poly const &f) override {
+            if (!contradiction(to_polynomial(f))) throw exhausted();
+        }
+        bool unique(std::vector<polynomial> &input, unsigned variables) {
+            std::vector<ff_unique::poly> equations, disequations;
+            for (auto const &f : input) equations.push_back(to_unique(f));
+            // Use the native tactic's propagation, with the same local stall
+            // policy and shared cancellation/work allowance. The sink disables
+            // digit, coincident-output zero-test and branch inferences until they
+            // carry checked evidence.
+            ff_unique::unique_budget budget(e.limit, std::min(1000000u, (e.max_work - e.steps()) / 4),
+                [&](uint64_t n) { for (uint64_t i = 0; i < n; ++i) e.tick(); });
+            try {
+                ff_unique::unique_solver solver(e.p, budget, equations, disequations, 1, this);
+                ff_unique::unique_solver::state st;
+                st.parent.resize(variables);
+                st.members.resize(variables);
+                st.val.resize(variables);
+                st.has_val.assign(variables, false);
+                st.is_bool.assign(variables, false);
+                for (unsigned v = 0; v < variables; ++v) {
+                    st.parent[v] = v;
+                    st.members[v] = {v};
+                }
+                budget.start_propagation();
+                if (solver.propagate(st)) return true;
+                budget.stop_propagation();
+                std::vector<polynomial> residual;
+                for (auto const &f : equations) residual.push_back(to_polynomial(solver.canon(st, f)));
+                input = std::move(residual);
+            }
+            catch (ff_unique::exhausted_budget const &) {
+                // Local stall/exhaustion changes no input. Valid but unused proof
+                // nodes are discarded when the final root is compacted. Global
+                // proof/work exhaustion propagates instead of resetting budgets.
+            }
+            return false;
         }
         row reduce(row f) {
             polynomial remainder;
@@ -230,7 +313,7 @@ namespace ff {
             return f4_solve(e.p, equations, {}, variables, values, conflict, cfg, stats,
                             charge, nullptr, &out) == l_false;
         }
-        bool run(std::vector<polynomial> const &equations, certificate &out, bool linear_first = false, bool native = false) {
+        bool run(std::vector<polynomial> const &equations, certificate &out, bool linear_first = false, bool native = false, bool native_unique = true) {
             // Linear and sparse equations can eliminate variables before
             // nonlinear input rows create large intermediate polynomials.
             // This only changes search order: input nodes retain their original
@@ -240,13 +323,17 @@ namespace ff {
                 unsigned variables = 0;
                 for (unsigned i = 0; i < input.size(); ++i) {
                     input[i].derivation = record({certificate::rule::input, i, 0, rational(1), {}});
-                    elimination_proofs.push_back(input[i].derivation);
                     for (auto const &[mon, c] : input[i]) for (unsigned v : mon) {
                         e.tick();
                         if (v >= 100000) throw exhausted();
                         variables = std::max(variables, v + 1);
                     }
                 }
+                if (native_unique && unique(input, variables)) {
+                    finish_native(out);
+                    return true;
+                }
+                for (auto const &f : input) elimination_proofs.push_back(f.derivation);
                 std::vector<rational> values(variables);
                 // The native engine now owns search and backend selection.
                 // Observers only record evidence from its actual operations;
@@ -293,7 +380,7 @@ namespace ff {
         }
     };
     bool certify(engine &arithmetic, std::vector<polynomial> const &equations,
-                 certificate &output, unsigned max_nodes, certificate_backend backend) {
+                 certificate &output, unsigned max_nodes, certificate_backend backend, bool native_unique) {
         if (backend == certificate_backend::automatic) {
             bool scalar_exhausted = false;
             try {
@@ -312,7 +399,7 @@ namespace ff {
             return found;
         }
         if (backend == certificate_backend::native)
-            return certificate_builder(arithmetic, max_nodes).run(equations, output, true, true);
+            return certificate_builder(arithmetic, max_nodes).run(equations, output, true, true, native_unique);
         if (backend == certificate_backend::f4)
             return certificate_builder(arithmetic, max_nodes).run_f4(equations, output, ~0u);
         try {

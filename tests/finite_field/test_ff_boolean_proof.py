@@ -140,6 +140,20 @@ def main():
                 '(assert (= x y))\n(assert (not (= (ite (= x y) (as ff1 F) (as ff0 F)) (as ff1 F))))',
                 '(assert (not (= (ite (xor a b) (ite a x y) y) (ite a (ite b y x) y))))',
             ]: certify(source(body,p))
+        # Shared affine/zero-test propagation exports ordinary PAC identities.
+        # Check their complete Boolean/Alethe bundles with the external pair too.
+        for p in [7, LARGE]:
+            extra = '\n'.join(f'(declare-const {v} F)' for v in ['z','w','t','u'])
+            S = '(ff.add (ff.mul x x) (ff.neg x))'
+            equations = [f'(= y (ff.add (as ff3 F) (ff.neg (ff.mul z {S}))))',
+                         f'(= (ff.mul (ff.add y (as ff-5 F)) {S}) (as ff0 F))',
+                         f'(= t (ff.add (as ff3 F) (ff.neg (ff.mul (as ff2 F) w {S}))))',
+                         f'(= (ff.mul (as ff2 F) (ff.add t (as ff-5 F)) {S}) (as ff0 F))',
+                         '(not (= y t))']
+            certify(source('\n'.join(f'(assert {e})' for e in equations), p, extra))
+            equations = ['(= x y)', '(= z (ff.add (ff.mul x x x) (as ff1 F)))',
+                         '(= w (ff.add (ff.mul y y y) (as ff1 F)))', '(not (= z w))']
+            certify(source('\n'.join(f'(assert {e})' for e in equations), p, extra))
         # Definitions/lets preserve lexical scope, including simultaneous binds.
         certify(source('(assert (and alias (not (let ((a b) (b a)) (= a b)))))',
                        extra='(define-fun alias () Bool (= a b))'))

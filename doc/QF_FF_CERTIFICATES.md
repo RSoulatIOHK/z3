@@ -231,8 +231,9 @@ operations retain the existing ideal-combination certificate obligations.
 ## Recording native transformations (experimental)
 
 `ff-certify :backend native` and the pipeline option `--backend native` enable
-proof recording through `engine::solve`, including its elimination and basis
-backend selection. Normal solving and certificate generation share these routines.
+proof recording through shared uniqueness propagation followed by `engine::solve`,
+including its elimination and basis backend selection. Normal solving and
+certificate generation share these routines.
 An optional observer records each substitution, preserving equation indices
 and composing its evidence with subsequent polynomial reductions. The existing
 `auto` schedule is unchanged.
@@ -253,16 +254,20 @@ Disequalities must already have their checked inverse-witness encoding.
 This is a first integration step, not proof recording throughout normal
 `check-sat`. In traced mode, elimination stops before bit-domain inference;
 residual equations go to the native F4 or legacy basis computation with recording enabled; F4 inputs are linked back to the earlier substitutions.
-The Boolean orchestration remains separate, but the native backend now uses Z3 SAT search with recorded clause evidence instead of Python DPLL. Recording bit decomposition and
-uniqueness, finite-field root reasoning and exhaustive branches, preprocessing
-and definitional extensions, and native SAT/theory conflict resolution remains
-necessary before claiming evidence for every native UNSAT path. Each path must
+The Boolean orchestration remains separate, but the native backend now uses Z3 SAT search with recorded clause evidence instead of Python DPLL. Shared uniqueness
+records affine class/value propagation, matching definitions, and zero-test
+matching with distinct outputs; `:unique false` disables it for ablation.
+See [the native proof audit](QF_FF_NATIVE_PROOFS.md) for its exact identities.
+Recording bit decomposition, the remaining uniqueness rules, finite-field root
+reasoning and exhaustive branches, AST preprocessing and definitional extensions,
+and native SAT/theory conflict resolution remains necessary before claiming evidence for every native UNSAT path. Each path must
 produce independently checked evidence or explicitly report unavailable.
 
 `test_ff_native_certificates.py` runs the existing exhaustive small-field,
 corruption, input-binding and resource oracle suite with the native backend,
 plus nonlinear cubic substitutions with non-unit pivots over five fields up to
-521 bits, and 32 forced native scalar/matrix/storage configurations. Native C++
+521 bits, 32 forced native scalar/matrix/storage configurations, and 69 shared
+uniqueness proofs with SAT, changed-premise and incremental-scope controls. Native C++
 tests also ensure those hooks exercise fused and geobucket reduction, matrix
 elimination, lazy reducers and sparse reducer selection. This test is included in the proof acceptance suite.
 
