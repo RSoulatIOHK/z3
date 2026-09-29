@@ -50,7 +50,8 @@ def worker(job):
         receipt['active_stage'] = 'produce'; (directory/'progress.json').write_text(json.dumps(receipt))
         text = source.read_text(); (directory/'problem.smt2').write_text(text)
         start = time.monotonic()
-        pp.produce_bundle(text, directory, config['command'][0], job['timeout'])
+        pp.produce_bundle(text, directory, config['command'][0], job['timeout'],
+                          backend=config.get('certificate_backend', 'auto'))
         receipt['stages']['produce'] = dict(seconds=time.monotonic()-start)
         receipt['produced'] = True; receipt['generation_seconds'] = time.monotonic()-job['started_at']; receipt['active_stage'] = 'check'
         (directory/'progress.json').write_text(json.dumps(receipt))
@@ -156,6 +157,9 @@ def main():
     ap.add_argument('--memory-mib',type=int,default=16384);ap.add_argument('--limit',type=int)
     args=ap.parse_args();args.out.mkdir(parents=True,exist_ok=True)
     configs=json.loads(args.config.read_text())
+    for binary in [c["command"][0] for c in configs] + [args.carcara, args.ffpacheck]:
+        if not Path(binary).is_file() or not os.access(binary, os.X_OK):
+            raise ValueError(f"benchmark executable is missing or not executable: {binary}")
     members=[r for r in json.loads(args.manifest.read_text())['entries'] if r['paper']=='FMCAD26' and 'benchmark_set_FF_UNSAT_SMT' in r['paper_sets']]
     selected={r['sha256']:r for r in members}; keys=sorted(selected)
     if args.limit: keys=keys[:args.limit]
