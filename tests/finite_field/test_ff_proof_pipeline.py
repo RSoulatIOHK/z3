@@ -121,6 +121,31 @@ def main():
         (last / 'proof.alethe').write_text(original)
         # Deadline enforcement is part of the pipeline contract.
         reject(lambda: pp.run([sys.executable, '-c', 'import time; time.sleep(30)'], 0.1)); rejected += 1
+        # The completion notification must keep both process reaping and the
+        # original deadline/output bounds, including immediate process failure.
+        import threading
+        import os
+        active = {t.ident for t in threading.enumerate()}
+        for _ in range(20):
+            result = pp.run([sys.executable, '-c', "print('ready')"], 5)
+            assert result['stdout'].strip() == 'ready'
+        assert {t.ident for t in threading.enumerate()} == active
+        reject(lambda: pp.run([sys.executable, '-c', 'raise SystemExit(3)'], 5)); rejected += 1
+        old_limit = pp.LIMIT
+        try:
+            pp.LIMIT = 1024
+            for fd in [1, 2]:
+                reject(lambda: pp.run([sys.executable, '-c', f'import os; os.write({fd}, b"x"*4096)'], 5))
+                rejected += 1
+        finally: pp.LIMIT = old_limit
+        pid_file = root/'timeout.pid'
+        reject(lambda: pp.run([sys.executable, '-c',
+            'import os,sys,time; open(sys.argv[1],"w").write(str(os.getpid())); time.sleep(30)', str(pid_file)], .2))
+        if pid_file.exists():
+            try: os.kill(int(pid_file.read_text()), 0)
+            except ProcessLookupError: pass
+            else: raise AssertionError('timed-out child was not reaped')
+        rejected += 1
     print(json.dumps(dict(externally_checked=checked, rejected=rejected,
                           carcara_unbound_pac_reproduced=True)))
 

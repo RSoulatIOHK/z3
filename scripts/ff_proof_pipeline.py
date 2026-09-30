@@ -270,21 +270,32 @@ def run(argv, timeout, input_text=None):
         if input_text is not None:
             inp.write(input_text.encode()); inp.seek(0)
         child = subprocess.Popen(argv, stdin=inp, stdout=out, stderr=err, start_new_session=True)
+        # Popen.wait(timeout) uses an exponential sleep loop on POSIX. A
+        # blocking waiter notifies completion immediately while this thread
+        # retains the same bounded output and wall-time supervision.
+        import threading
+        completed = threading.Event()
+        wait_errors = []
+        def wait_for_exit():
+            try: child.wait()
+            except Exception as error: wait_errors.append(error)
+            finally: completed.set()
+        waiter = threading.Thread(target=wait_for_exit, daemon=True)
         try:
-            while child.poll() is None:
-                fc.require(time.monotonic() - start < timeout, 'external stage timeout')
+            waiter.start()
+            while not completed.is_set():
+                remaining = timeout - (time.monotonic() - start)
+                fc.require(remaining > 0, 'external stage timeout')
                 fc.require(os.fstat(out.fileno()).st_size <= LIMIT and os.fstat(err.fileno()).st_size <= LIMIT,
                            'external output limit')
-                # Wait for early completion instead of imposing 20ms on every
-                # tiny field lemma. Keep output/deadline supervision bounded.
-                try:
-                    child.wait(timeout=0.02)
-                except subprocess.TimeoutExpired:
-                    pass
+                completed.wait(min(.02, remaining))
         finally:
-            if child.poll() is None:
-                os.killpg(child.pid, signal.SIGKILL)
-                child.wait()
+            if not completed.is_set():
+                try: os.killpg(child.pid, signal.SIGKILL)
+                except ProcessLookupError: pass
+            if waiter.ident is not None: waiter.join()
+            else: child.wait()
+        if wait_errors: raise wait_errors[0]
         out.seek(0); err.seek(0)
         stdout, stderr = out.read(LIMIT + 1), err.read(LIMIT + 1)
         fc.require(len(stdout) <= LIMIT and len(stderr) <= LIMIT, 'external output limit')
@@ -371,12 +382,16 @@ class FieldSession:
     """Reuse a process/AST manager, but isolate every field query's premises.
 
     Only generated Case.normalized() inputs are sent here. A fresh command scope
-    owns declarations and assertions; no algebraic result or proof ID is reused.
+    owns assertions. Identical declarations may survive between requests, but
+    no algebraic result or proof ID is reused. A changed declaration resets the
+    command context before the next query.
     The nonce delimits multiline output, never authorizes a proof step.
     """
     def __init__(self, binary):
         self.session = NativeSession(binary)
         self.started = False
+        self.declarations = {}
+        self.declaration_bytes = 0
 
     def query(self, normalized, deadline, backend):
         import secrets
@@ -385,10 +400,33 @@ class FieldSession:
         remaining = deadline - time.monotonic()
         fc.require(remaining > 0, 'field session timeout')
         marker = 'ff_session_end_' + secrets.token_hex(16)
-        text = '' if self.started else header
-        text += '(push)\n' + normalized[len(header):] + certificate_command(remaining, backend)
+        import re
+        fc.require(len(normalized.encode()) <= LIMIT, 'field session input limit')
+        declarations, assertions = {}, []
+        for line in normalized[len(header):].splitlines():
+            if line.startswith('(assert '): assertions.append(line); continue
+            match = re.match(r'^\((?:declare-const|define-fun) ([A-Za-z_][A-Za-z_0-9]*) ', line)
+            fc.require(match is not None, 'unexpected normalized declaration')
+            name = match[1]
+            fc.require(name not in declarations, 'duplicate normalized declaration')
+            declarations[name] = line
+        new = {k: v for k, v in declarations.items() if k not in self.declarations}
+        size = sum(len(v.encode())+1 for v in new.values())
+        reset = any(k in self.declarations and self.declarations[k] != v for k,v in declarations.items())
+        reset |= self.declaration_bytes + size > LIMIT
+        if reset:
+            new = declarations
+            size = sum(len(v.encode())+1 for v in new.values())
+        fc.require(size <= LIMIT, 'field declaration limit')
+        text = '(reset)\n' if reset else ''
+        if reset or not self.started: text += header
+        text += ''.join(line+'\n' for line in new.values())
+        text += '(push)\n' + ''.join(line+'\n' for line in assertions) + certificate_command(remaining, backend)
         text += f'(pop)\n(echo "{marker}")\n'
         result = self.session.exchange(text, deadline, ('\n' + marker + '\n').encode())
+        if reset:
+            self.declarations.clear(); self.declaration_bytes = 0
+        self.declarations.update(new); self.declaration_bytes += size
         self.started = True
         return result
 

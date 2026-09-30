@@ -27,6 +27,23 @@ def field_scopes(binary):
                 if expected:
                     suite.pp.fc.verify(text, proof)
                     suite.reject(lambda: suite.pp.fc.verify(sat, proof))
+        # Identical declarations are sent once; changing a definition resets
+        # the context, while every assertion remains scoped to its own query.
+        sent = []
+        exchange = field.session.exchange
+        def record_exchange(text, *args):
+            sent.append(text); return exchange(text, *args)
+        with patch.object(field.session, 'exchange', record_exchange):
+            prefix = '(set-logic QF_FF)\n(declare-const x (_ FiniteField 7))\n'
+            prefix += '(define-fun y () (_ FiniteField 7) (ff.add x #f1m7))\n'
+            text = prefix + '(assert (= x #f0m7))\n(assert (= y #f0m7))\n'
+            for _ in range(2):
+                proof = field.query(text, time.monotonic()+10, 'native')
+                suite.pp.fc.verify(text, proof)
+            assert '(define-fun y' not in sent[-1] and '(declare-const x' not in sent[-1]
+            sat = text.replace('(ff.add x #f1m7)', '(ff.add x #f0m7)')
+            assert not field.query(sat, time.monotonic()+10, 'native').startswith('(ff-certificate\n')
+            assert sent[-1].startswith('(reset)\n')
         suite.reject(lambda: field.query(sat, time.monotonic()-1, 'native'))
     finally:
         field.close()
