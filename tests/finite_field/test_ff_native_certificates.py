@@ -46,7 +46,7 @@ def balancing_cases():
     tiny[tiny.index(':nodes')+1] = [['input','0'], ['add','0','0'], ['mul','1','4',[]], ['mul','0','2',[]]]
     tiny[tiny.index(':root')+1] = '2'
     _, pac = pipeline.verified_pac(fc.Problem(text), fc.sexpr(tiny), compact=False)
-    assert pac == 'm 7;\na 1 1;\nl 2 1*(1) + 1*(1), 2;\nl 3 2*(4), 1;\nunsat\n'
+    assert pac == 'm 7;\na 1 1;\nl 2 1*(1) + 1*(1), 2;\nl 3 2*(-3), 1;\nunsat\n'
     _, compact_pac = pipeline.verified_pac(fc.Problem(text), fc.sexpr(tiny))
     assert compact_pac == 'm 7;\na 1 1;\nl 2 1*(1), 1;\nunsat\n'
     def stream(problem, proof):
@@ -66,6 +66,43 @@ def balancing_cases():
         suite.rejected(fc.balance_certificate,fc.sexpr(bad))
         suite.rejected(fc.read_certificate,fc.sexpr(bad))
     print('proof balancing: retained-term recovery, unchanged-input binding and malformed/cyclic nodes checked')
+
+def scheduling_case():
+    fc = suite.checker
+    # A breadth-first producer can keep every large product alive until a
+    # final reduction. Scheduling must preserve the exact shared ring DAG
+    # while reducing peak live storage; repeated references stay valid.
+    text = suite.source(7, ['(= (as ff1 F) (as ff0 F))'])
+    nodes = [['input','0']]
+    products = []
+    for degree in range(1,201):
+        products.append(len(nodes)); nodes.append(['mul','0','1',['0']*degree])
+    pairs = []
+    for i in products:
+        negative = len(nodes); nodes.append(['mul',str(i),'6',[]])
+        pairs.append(len(nodes)); nodes.append(['add',str(i),str(negative)])
+    root = 0
+    for i in pairs:
+        old = root; root = len(nodes); nodes.append(['add',str(old),str(i)])
+    raw = fc.sexpr(['ff-certificate', ':version','1', ':modulus','7', ':variables',['x'],
+                   ':inputs',[[['1']]], ':nodes',nodes, ':root',str(root)])
+    scheduled = fc.schedule_certificate(raw)
+    from unittest.mock import patch
+    peaks = []
+    base = fc.Arithmetic
+    class Measured(base):
+        def keep(self, value):
+            result = super().keep(value)
+            peaks[-1] = max(peaks[-1], self.retained)
+            return result
+    for certificate in [raw, scheduled]:
+        peaks.append(0)
+        with patch.object(fc, 'Arithmetic', Measured):
+            fc.verify_problem(fc.Problem(text), certificate, retain_values=False)
+        suite.rejected(fc.verify, text.replace('ff1','ff0'), certificate)
+    assert peaks[1] * 10 < peaks[0], peaks
+    print(f'dependency scheduling: peak live storage {peaks[0]} -> {peaks[1]}')
+
 
 def native_run(binary, text, options=''):
     return _original_run(binary, text, ':backend native ' + options)
@@ -216,6 +253,7 @@ if __name__ == '__main__':
     parser.add_argument('--z3', required=True)
     args = parser.parse_args()
     balancing_cases()
+    scheduling_case()
     branch_cases(args.z3)
     uniqueness_cases(args.z3)
     count = 0

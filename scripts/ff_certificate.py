@@ -360,10 +360,44 @@ def balance_certificate(text):
     return out
 
 
+def schedule_certificate(text):
+    """Untrusted dependency-first scheduling; preserve every ring operation.
+
+    Balancing can otherwise emit all products of a sum before any addition,
+    retaining many large expanded polynomials simultaneously. Visit a subtree
+    before its sibling, and emit shared nodes once. Independent replay remains
+    mandatory after this purely structural producer transformation.
+    """
+    c = read_certificate(text)
+    nodes, result, renamed = c[':nodes'], [], {}
+    pending = [(natural(c[':root']), False)]
+    while pending:
+        i, ready = pending.pop()
+        if i in renamed:
+            continue
+        node = nodes[i]
+        parents = node[1:3] if node[0] == 'add' else node[1:2] if node[0] == 'mul' else []
+        if not ready:
+            pending.append((i, True))
+            pending.extend((natural(j), False) for j in reversed(parents))
+            continue
+        node = list(node)
+        if parents:
+            node[1] = str(renamed[natural(node[1])])
+        if node[0] == 'add':
+            node[2] = str(renamed[natural(node[2])])
+        renamed[i] = len(result)
+        result.append(node)
+    c[':nodes'], c[':root'] = result, str(renamed[natural(c[':root'])])
+    return sexpr(['ff-certificate'] + [x for kv in c.items() for x in kv]) + '\n'
+
+
 def try_balance_certificate(text):
     # Local normalization limits do not invalidate an existing recorded proof.
     # The original or transformed DAG is always checked before it is accepted.
-    try: return balance_certificate(text)
+    try: text = balance_certificate(text)
+    except Invalid: pass
+    try: return schedule_certificate(text)
     except Invalid: return text
 
 
@@ -416,7 +450,12 @@ def verify_problem(problem, certificate_text, *, retain_values=True, on_node=Non
         key = symbol(name)
         require(key not in names and key in problem.declarations and problem.declarations[key][1] == ar.p, "invalid variable declaration")
         names[key] = i
-    inputs = [problem.equation(eq, names, ar) for eq in problem.equations]
+    # Typed DAG frontends may release normalized subterms after their last
+    # use. Charge each resulting input immediately so normalization and replay
+    # share the same bound on simultaneously retained polynomials.
+    normalized = (problem.equation_values(names, ar) if hasattr(problem, 'equation_values')
+                  else (problem.equation(eq, names, ar) for eq in problem.equations))
+    inputs = [value if retain_values else ar.keep(value) for value in normalized]
     require(isinstance(cert[':inputs'], list) and len(inputs) == len(cert[':inputs']), "input count mismatch")
     for expected, raw in zip(inputs, cert[':inputs']):
         require(expected == decode_polynomial(raw, ar, len(names)), "input normalization mismatch")
@@ -444,11 +483,6 @@ def verify_problem(problem, certificate_text, *, retain_values=True, on_node=Non
         references.append(parents)
         for parent in parents:
             uses[parent] += 1
-    if not retain_values:
-        # Inputs outlive their nodes; charge them separately, conservatively
-        # including aliases already retained by a typed problem's term cache.
-        for value in inputs:
-            ar.keep(value)
     values = []
     for i, node in enumerate(nodes):
         parents = references[i]

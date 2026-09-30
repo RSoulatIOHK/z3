@@ -119,10 +119,15 @@ class LiteralProblem(fc.Problem):
         return '\n'.join(lines) + '\n'
 
 
-def pac_polynomial(value):
+def pac_polynomial(value, modulus=None):
     """Fixed variable numbering shared with the checked DAG; no user PAC names."""
     terms = []
     for mon, c in sorted(value.items(), reverse=True):
+        # PAC coefficients are integers interpreted modulo the declared prime.
+        # Centering avoids spelling -1 as a hundreds-of-bits positive integer.
+        # The independent DAG replay still uses canonical residues throughout.
+        if modulus is not None and c > modulus // 2:
+            c -= modulus
         factors = [str(c)]
         for v, exponent in sorted(Counter(mon).items()):
             factors.append(f'v{v + 1}' + (f'^{exponent}' if exponent > 1 else ''))
@@ -150,12 +155,13 @@ class PacWriter:
             elif n[0] == 'mul':
                 pending.append(int(n[1]))
         p = int(cert[':modulus'])
+        self.modulus = p
         ar = fc.Arithmetic(p)
         self.lines, self.size = [], 0
         self.emit(f'm {p};')
         for i, raw in enumerate(cert[':inputs']):
             value = fc.decode_polynomial(raw, ar, len(cert[':variables']))
-            self.emit(f'a {i + 1} {pac_polynomial(value)};')
+            self.emit(f'a {i + 1} {pac_polynomial(value, self.modulus)};')
         self.ids, self.fresh = {}, len(cert[':inputs']) + 1
 
     def emit(self, line):
@@ -174,8 +180,8 @@ class PacWriter:
             op = f'{self.ids[int(n[1])]}*(1) + {self.ids[int(n[2])]}*(1)'
         else:
             factor = {tuple(map(int, n[3])): int(n[2])}
-            op = f'{self.ids[int(n[1])]}*({pac_polynomial(factor)})'
-        self.emit(f'l {self.fresh} {op}, {pac_polynomial(value)};')
+            op = f'{self.ids[int(n[1])]}*({pac_polynomial(factor, self.modulus)})'
+        self.emit(f'l {self.fresh} {op}, {pac_polynomial(value, self.modulus)};')
         self.ids[i] = self.fresh
         self.fresh += 1
 
@@ -188,9 +194,9 @@ class PacWriter:
 
 
 class CompactPacWriter(PacWriter):
-    """Inline single-use steps into existing PAC linear combinations.
+    """Inline bounded low-fan-out steps into PAC linear combinations.
 
-    Shared nodes stay as named anchors. Every original DAG node is still
+    Frequently shared nodes stay as named anchors. Every original DAG node is still
     independently replayed; this only avoids printing its expanded polynomial
     when no later PAC step needs to refer to it separately.
     """
@@ -204,7 +210,20 @@ class CompactPacWriter(PacWriter):
             parents = n[1:3] if n[0] == 'add' else n[1:2] if n[0] == 'mul' else []
             for parent in parents:
                 uses[int(parent)] += 1
-        self.anchors = {i for i in self.used if uses[i] > 1 or self.nodes[i][0] == 'input'} | {self.root}
+        # Naming every twice-used node can print a large polynomial merely to
+        # save two short multiplier expressions. Inline low fan-out nodes, but
+        # cap each expanded combination at 1024 DAG leaves to avoid exponential
+        # duplication. Higher fan-out nodes retain explicit sharing.
+        self.anchors, expansion = set(), {}
+        for i in sorted(self.used):
+            n = self.nodes[i]
+            parents = n[1:3] if n[0] == 'add' else n[1:2] if n[0] == 'mul' else []
+            cost = sum(expansion[int(j)] for j in parents) or 1
+            if n[0] == 'input' or i == self.root or uses[i] > 2 or cost > 1024:
+                self.anchors.add(i)
+                expansion[i] = 1
+            else:
+                expansion[i] = cost
 
     def node(self, i, value):
         if i not in self.anchors:
@@ -235,8 +254,8 @@ class CompactPacWriter(PacWriter):
         # input rather than introduce a new axiom. PAC checks this inference.
         if not grouped:
             grouped[next(j for j in self.ids if self.nodes[j][0] == 'input')] = {}
-        op = ' + '.join(f'{self.ids[j]}*({pac_polynomial(f)})' for j, f in grouped.items())
-        self.emit(f'l {self.fresh} {op}, {pac_polynomial(value)};')
+        op = ' + '.join(f'{self.ids[j]}*({pac_polynomial(f, self.modulus)})' for j, f in grouped.items())
+        self.emit(f'l {self.fresh} {op}, {pac_polynomial(value, self.modulus)};')
         self.ids[i] = self.fresh
         self.fresh += 1
 

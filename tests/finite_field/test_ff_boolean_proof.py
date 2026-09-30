@@ -101,7 +101,34 @@ def check_boolean_search(factory=bp.Search):
     return checks
 
 
+def check_normalization_lifetimes():
+    # A shared chain with repeated operands and equality endpoints exercises
+    # last-use accounting independently of any algebraic refutation strategy.
+    body = '(define-fun f0 () F (ff.add x y))\n'
+    for i in range(1, 71): body += f'(define-fun f{i} () F (ff.mul f{i-1} (ff.add x y)))\n'
+    body += '(assert (= f70 f69))\n(assert (not (= f69 f68)))\n(assert (= (ff.add f68 f68) f67))'
+    g = bp.Graph(source(body, LARGE))
+    literals = [i for i in range(1, g.boolean_nodes) if g.field_atom(i)]
+    literals[1] = -literals[1]
+    old, streamed = bp.Case(g, literals), bp.Case(g, literals)
+    names = {name:i for i,name in enumerate(old.declarations)}
+    class Measured(pp.fc.Arithmetic):
+        def __init__(self, p): super().__init__(p); self.peak = 0
+        def keep(self, value):
+            result = super().keep(value); self.peak = max(self.peak, self.retained); return result
+        def release(self, value):
+            super().release(value); assert self.retained >= 0
+    eager_ar, stream_ar = Measured(LARGE), Measured(LARGE)
+    expected = [old.equation(lit, names, eager_ar) for lit in literals]
+    actual = list(streamed.equation_values(names, stream_ar))
+    assert expected == actual
+    assert stream_ar.retained == 0
+    assert stream_ar.peak * 4 < eager_ar.peak, (stream_ar.peak, eager_ar.peak)
+    print(f'input normalization: identical equations; peak retained weight {eager_ar.peak} -> {stream_ar.peak}')
+
+
 def main():
+    check_normalization_lifetimes()
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ['z3','carcara','ffpacheck']: parser.add_argument('--'+name, required=True)
     parser.add_argument('--backend', choices=['auto', 'native'], default='auto')

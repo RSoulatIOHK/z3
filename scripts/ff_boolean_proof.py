@@ -635,6 +635,47 @@ class Case:
             value = ar.add(ar.mul(value, {(names[self.witness(lit)],): 1}), {(): 1}, -1)
         return value
 
+    def equation_values(self, names, ar):
+        """Normalize the input DAG with exact last-use accounting.
+
+        Children shared by several terms or equality endpoints remain live until
+        their last use. In particular, repeated arguments count as separate uses.
+        No proof node or original equation is skipped by this storage policy.
+        """
+        require(ar.p == self.g.p, 'field lemma modulus differs from original input')
+        g, uses, values = self.g, {}, {}
+        for i in self.used:
+            op, args, _ = g.nodes[i]
+            for a in (() if op in ('var', 'ite', 'num') else args):
+                uses[a] = uses.get(a, 0) + 1
+        for lit in self.equations:
+            for a in g.nodes[abs(lit)][1]: uses[a] = uses.get(a, 0) + 1
+        def release(i):
+            uses[i] -= 1
+            if not uses[i]: ar.release(values.pop(i))
+        for i in sorted(self.used):
+            op, args, data = g.nodes[i]
+            if op in ('var', 'ite'):
+                require(self.variable(i) in names, 'missing field variable')
+                value = {(names[self.variable(i)],): 1}
+            elif op == 'num':
+                c = data[0] % ar.p; value = {(): c} if c else {}
+            elif op == 'ff.neg': value = ar.add({}, values[args[0]], -1)
+            else:
+                value = {(): 1} if op == 'ff.mul' else {}
+                for a in args:
+                    value = ar.mul(value, values[a]) if op == 'ff.mul' else ar.add(value, values[a])
+            values[i] = ar.keep(value)
+            for a in (() if op in ('var', 'ite', 'num') else args): release(a)
+        for lit in self.equations:
+            a, b = g.nodes[abs(lit)][1]
+            value = ar.add(values[a], values[b], -1)
+            if lit < 0:
+                require(self.witness(lit) in names, 'missing inverse witness')
+                value = ar.add(ar.mul(value, {(names[self.witness(lit)],): 1}), {(): 1}, -1)
+            release(a); release(b)
+            yield value
+
     def choice(self, lit):
         g = self.g; a, b = g.nodes[abs(lit)][1]; binder = f'{g.prefix}bound{abs(lit)}'
         return f'(choice (({binder} {sort_text(g.p)})) (= (ff.mul {binder} (ff.add {g.ref(a)} (ff.neg {g.ref(b)}))) (as ff1 {sort_text(g.p)})))'

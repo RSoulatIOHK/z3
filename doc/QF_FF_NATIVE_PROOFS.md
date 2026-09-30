@@ -59,6 +59,13 @@ an ordinary SAT clause after restarting at the root. CDCL propagates the new
 clause and continues with its learned clauses. There are no opaque theory justifications.
 Pure literal-conjunction inputs still use the cheaper standalone field command.
 
+`(ff-integrated-certify :diagnostics true)` reports per-check equation/variable
+counts, proof construction/serialization time and algebra resource counters on
+the diagnostic stream. It leaves the certificate stream unchanged. Exhaustion
+reasons distinguish polynomial terms, polynomial work, proof nodes, proof bytes
+and normalization storage when those limits are reached; unclassified limits
+remain `resource`. This option is off by default.
+
 The producer registers positive equalities and explicit inverse-witness equations
 for negative literals. These registrations are an internal protocol, not trusted
 assertions about the original problem. The consumer binds every retained premise
@@ -178,6 +185,52 @@ controls, and external Alethe/PAC checks. C++ tests also assert that simple bran
 fixtures close before native elimination or basis computation.
 
 ## Current measured acceptance
+
+A complete paired run now checks **370/390** distinct FMCAD inputs versus
+**369/390** with frozen `a2fe1485a`: one gain, no losses. Both configurations use
+the integrated native backend, four workers and the same ten-second whole-pipeline
+deadline, including original-input replay, standalone FFPacheck and Carcara calling
+FFPacheck. The retained configuration produces 371 bundles versus 370. The
+geometric-mean time ratio on the 369 common successes is **1.046**: a modest cost
+for increased checked coverage, not a general speedup. The newly checked 06v/032t
+Zokref determinism case takes 9.13 seconds; three further repetitions check it
+in 9.14–9.22 seconds, while the baseline times out in all three. Both configurations
+retain all six repeated completions of the two previously borderline successes.
+
+The retained changes release normalized input subterms at last use, schedule the
+untrusted producer DAG by dependencies, and inline bounded low-fan-out PAC steps.
+PAC uses centered integer coefficients (for example, `-1` instead of `p-1`), with
+unchanged modular arithmetic and checking. No arithmetic/checker limit is raised,
+no external check is removed, and backend selection remains unchanged. Export
+bytes remain implementation-specific; frozen scripts accompany every archived run.
+
+The **20** remaining inputs comprise 15 Circ production deadline misses, three
+native construction limits (two polynomial-size limits and one proof-store limit),
+one independent-replay storage failure, and one exported bundle exceeding the
+checking deadline. Input-normalization cleanup alone did not remove the replay
+failures: dependency scheduling gets one through export, but it still exceeds the
+whole-pipeline deadline. The other also reaches polynomial expansion limits when
+diagnosed beyond its initial storage failure.
+
+600 screening measurements rejected speculative early theory checks (five lost
+successes, 36% slower on common successes), larger polynomial limits, proof-node
+sharing/pruning and a ring-certified square consequence for coincident zero tests.
+The latter three did not improve checked coverage beyond export-only changes.
+Direct backward multiplier accumulation also exceeded the unchanged storage bound.
+The sampled Circ problems generated 73–362 certified conflicts in nine seconds;
+preserving Boolean-to-field range facts symbolically is a stronger next lead than
+repeating algebra on complete assignments. Digit injectivity remains unimplemented;
+the earlier ablation below did not identify it as the cause of these misses.
+
+All **35** acceptance checks pass, including new shared-input lifetime, dependency
+scheduling, signed-coefficient and diagnostic-stream regressions. The separate
+`qf-ff-proof-frontier-20260930` archive contains 1,404 completed benchmark
+measurements, frozen candidates, proof bundles, exact checker identities and the
+rejected prototypes. A 569-row campaign interrupted by disk exhaustion is preserved
+but excluded; the paired full run was restarted after content-verified compression.
+No cvc5 or Lean rerun was performed, and these changes have not been pushed.
+
+## Previous native integration measurement
 
 The native SAT/theory integration with root restarts checks **369/390** distinct
 FMCAD inputs, exactly the same successful inputs as the retained incremental
