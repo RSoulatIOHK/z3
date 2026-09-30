@@ -41,7 +41,7 @@ can be supplied with `--archives DIR` (`carcara.tar.gz`, `ffpacheck.tar.gz`).
 See [the checker trust boundary](proof_checkers/README.md) for required input
 binding and why raw external-checker acceptance alone is insufficient.
 
-The seven proof suites include native wire-elimination and forced-F4 derivations and exhaustive small-field
+The proof suites include native wire-elimination and forced-F4 derivations and exhaustive small-field
 oracles, independent DAG/Alethe replay, original-input binding,
 external literal and Boolean pipelines, native SAT clause replay, tampered/truncated/wrong-input rejection,
 and resource recovery. Missing checkers are an error, not a skipped pass.
@@ -62,6 +62,19 @@ linear-combination inferences, retaining shared intermediate polynomials.
 External-checker regressions cover cancellation to zero, repeated references,
 and roots preceding unused nodes. Carcara and FFPacheck remain required
 acceptance steps.
+
+The optional `--boolean-backend ranges` pipeline mode seeds native SAT search
+with certified bit-domain, complement, product, zero-test and bounded-sum lemmas.
+It requires `--backend native`. Partial sums are fresh definitions, whose
+identities are justified by Alethe `refl`; all arithmetic implications carry
+ordinary PAC certificates and keep their original equality premises. No-wrap
+zero propagation requires the sum's upper bound to be strictly below the field
+modulus. Matching proposes lemmas; it never makes them trusted assumptions.
+The JSON certificate uses schema version 3 to reconstruct these definitions
+from the original input, while existing version-2 bundles remain supported.
+`test_ff_range_proof.py` checks renamed/reordered circuits, complemented outputs,
+small-field wraparound SAT counterexamples, conditional constraints, and proof
+corruptions through the independent binding checker, FFPacheck and Carcara.
 
 Every invocation requires a new output directory and writes per-suite logs plus
 `summary.json`, including commands, statuses, timings and the selected build.

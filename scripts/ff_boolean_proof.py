@@ -31,7 +31,7 @@ def clause(lits):
 
 
 class Graph:
-    def __init__(self, text):
+    def __init__(self, text, ranges=False):
         self.nodes = [None]  # Positive node IDs are also Boolean atom IDs.
         self.intern, self.names, self.sorts, self.assertions = {}, {}, {}, []
         self.literal_ids = {}
@@ -87,6 +87,11 @@ class Graph:
                 first, second = self.node('=', (i, a)), self.node('=', (i, b))
                 meaning = self.node('ite', (c, first, second))
                 self.ites.append((i, meaning))
+        self.cut_definitions = {}
+        self.range_seeds = []
+        if ranges:
+            import ff_range_proof
+            ff_range_proof.augment(self)
         self.boolean_nodes = len(self.nodes)
 
     def tick(self):
@@ -200,9 +205,16 @@ class Graph:
         return self.literal_ids[i]
 
     def definitions(self):
-        return [f'(define-fun {self.ref(i)} () {sort_text(self.typ(i))} '
-                f'({op} {" ".join(self.ref(a) for a in args)}))'
-                for i, (op, args, data) in enumerate(self.nodes[1:], 1) if args]
+        result = []
+        for i, (op, args, data) in enumerate(self.nodes[1:], 1):
+            if i in self.cut_definitions:
+                body = self.ref(self.cut_definitions[i])
+            elif args:
+                body = f'({op} {" ".join(self.ref(a) for a in args)})'
+            else:
+                continue
+            result.append(f'(define-fun {self.ref(i)} () {sort_text(self.typ(i))} {body})')
+        return result
 
     def field_atom(self, i):
         op, args, _ = self.nodes[abs(i)]
@@ -241,6 +253,9 @@ class Clauses:
                                   ('ite_neg1', [i, a[0], -a[2]]), ('ite_neg2', [i, -a[0], -a[1]])]:
                     self.add(raw, ('rule', rule, raw, None))
         for i, meaning in g.ites: self.add([meaning], ('ite', i, meaning))
+        for i, value in g.cut_definitions.items():
+            atom = g.node('=', (i, value))
+            self.add([atom], ('cut', atom))
 
     def add(self, raw, source):
         self.clauses.append(clause((1 if x > 0 else -1) * self.g.lit(abs(x)) for x in raw)); self.sources.append(source)
@@ -731,9 +746,13 @@ def compact(g, literals, dag):
 
 def produce(original, z3, timeout, backend="auto", boolean_backend="auto", field_session=None):
     require(backend in ("auto", "scalar", "f4", "native"), "invalid certificate backend")
-    require(boolean_backend in ("auto", "native", "incremental", "integrated", "legacy"), "invalid Boolean backend")
+    require(boolean_backend in ("auto", "native", "incremental", "integrated", "ranges", "legacy"), "invalid Boolean backend")
     import ff_proof_pipeline as pp
-    start = time.monotonic(); g = Graph(original); base = Clauses(g)
+    start = time.monotonic(); g = Graph(original, ranges=boolean_backend == "ranges"); base = Clauses(g)
+    if boolean_backend == "ranges":
+        require(backend == "native", "range search requires native polynomial certificates")
+        import ff_range_proof
+        return ff_range_proof.produce(g, base, z3, start, timeout)
     if boolean_backend == "integrated":
         require(backend == "native", 'integrated search requires native polynomial certificates')
         return produce_integrated(g, base, z3, start, timeout)
@@ -900,6 +919,8 @@ class Writer:
             elif src[0] == 'rule':
                 _, rule, raw, args = src
                 name = self.step([g.literal(x) for x in raw], rule, args=args)
+            elif src[0] == 'cut':
+                name = self.step([g.ref(src[1])], 'refl')
             else:
                 _, i, meaning = src
                 # ite_intro proves true iff true AND the ITE defining equation.
@@ -954,9 +975,9 @@ class Writer:
 
 
 def verify_export(original, proof):
-    require(isinstance(proof, dict) and set(proof) == {'version', 'records', 'root'} and proof['version'] == 2, 'unknown Boolean certificate schema')
+    require(isinstance(proof, dict) and set(proof) == {'version', 'records', 'root'} and type(proof['version']) is int and proof['version'] in (2, 3), 'unknown Boolean certificate schema')
     require(isinstance(proof['records'], list) and len(proof['records']) <= MAX_RECORDS, 'record limit')
-    g = Graph(original); base = Clauses(g); clauses = list(base.clauses); writer = Writer(g); writer.base(base)
+    g = Graph(original, ranges=proof['version'] == 3); base = Clauses(g); clauses = list(base.clauses); writer = Writer(g); writer.base(base)
     files, count = {}, 0
     for record in proof['records']:
         require(isinstance(record, dict), 'malformed record')
