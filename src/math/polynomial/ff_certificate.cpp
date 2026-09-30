@@ -208,14 +208,20 @@ namespace ff {
             if (zero_proof == ~0u) zero_proof = add(0, multiply(0, e.p-rational(1), {}));
             return zero_proof;
         }
-        // If a branch proves 1=A+B*h, remove its local assumption h while
-        // retaining A as a derivation from the enclosing scope's premises.
-        std::pair<unsigned, polynomial> discharge(unsigned root, unsigned hypothesis) {
+        // If root proves 1=A+B*h and target proves T=0, return proofs of
+        // A=0 and B*T=0. The derivation is linear in its input hypotheses:
+        // replace h by zero for A and by target for B*T, with all other inputs
+        // zero in the latter traversal. Never expand B as a polynomial.
+        std::pair<unsigned, unsigned> discharge(unsigned root, unsigned hypothesis, unsigned target) {
             unsigned count = proof.nodes.size();
+            if (root >= count || hypothesis >= count || target >= count) throw exhausted();
             std::vector<bool> live(count, false), affected(count, false);
-            std::vector<unsigned> pending{root}, rewritten(count, ~0u);
-            std::vector<polynomial> multipliers(count);
-            size_t storage = count * (sizeof(polynomial) + sizeof(unsigned) + 2);
+            std::vector<unsigned> pending{root}, rewritten(count, ~0u), lifted(count, ~0u);
+            // ~0u here means the algebraic zero, not a missing premise. It is
+            // eliminated by neutral-element rules or materialized by zero().
+            auto sum = [&](unsigned a, unsigned b) {
+                return a == ~0u ? b : b == ~0u ? a : add(a, b);
+            };
             while (!pending.empty()) {
                 e.tick();
                 unsigned id = pending.back(); pending.pop_back();
@@ -233,49 +239,33 @@ namespace ff {
                 rewritten[i] = i;
                 if (i == hypothesis) {
                     affected[i] = true;
-                    rewritten[i] = zero();
-                    multipliers[i] = e.constant(rational(1));
+                    rewritten[i] = ~0u;
+                    lifted[i] = target;
                 }
                 else if (n.kind == certificate::rule::multiply && affected[n.left]) {
                     affected[i] = true;
-                    rewritten[i] = multiply(rewritten[n.left], n.coefficient, n.factor);
-                    polynomial factor;
-                    e.add_term(factor, n.factor, n.coefficient);
-                    multipliers[i] = e.mul(multipliers[n.left], factor);
+                    rewritten[i] = rewritten[n.left] == ~0u ? ~0u : multiply(rewritten[n.left], n.coefficient, n.factor);
+                    lifted[i] = lifted[n.left] == ~0u ? ~0u : multiply(lifted[n.left], n.coefficient, n.factor);
                 }
                 else if (n.kind == certificate::rule::add && (affected[n.left] || affected[n.right])) {
                     affected[i] = true;
-                    rewritten[i] = add(rewritten[n.left], rewritten[n.right]);
-                    multipliers[i] = e.add(multipliers[n.left], multipliers[n.right]);
+                    rewritten[i] = sum(rewritten[n.left], rewritten[n.right]);
+                    lifted[i] = sum(lifted[n.left], lifted[n.right]);
                 }
-                for (auto const &[m, c] : multipliers[i]) {
-                    e.tick();
-                    storage += 3 * (sizeof(std::pair<monomial, rational>) + m.capacity() * sizeof(unsigned) +
-                                    2 * (e.p.get_num_bits()/8 + 1));
-                }
-                if (storage > 16 * 1024 * 1024) throw exhausted();
             }
-            return {rewritten[root], std::move(multipliers[root])};
-        }
-        unsigned multiply_polynomial(unsigned id, polynomial const &factor) {
-            unsigned result = ~0u;
-            for (auto const &[m, c] : factor) {
-                e.tick();
-                unsigned term = multiply(id, c, m);
-                result = result == ~0u ? term : add(result, term);
-            }
-            return result == ~0u ? zero() : result;
+            return {rewritten[root] == ~0u ? zero() : rewritten[root],
+                    lifted[root] == ~0u ? zero() : lifted[root]};
         }
         void join_branches(unsigned variable, ff_unique::poly const &boolean,
                            unsigned hypothesis0, unsigned root0, unsigned hypothesis1, unsigned root1) override {
-            auto [a0, b0] = discharge(root0, hypothesis0);
-            auto [a1, b1] = discharge(root1, hypothesis1);
             // 1=A0+B0*x and 1=A1+B1*(x-1). With the proved q=x*(x-1),
-            // A0+B0*(x*A1+B1*q)=1. Every multiplier is expanded into existing
-            // PAC add/multiply steps; neither branch is a new trusted premise.
-            unsigned lifted = add(multiply(a1, rational(1), {variable}),
-                                  multiply_polynomial(boolean.derivation, b1));
-            proof.root = add(a0, multiply_polynomial(lifted, b0));
+            // A0+B0*(x*A1+B1*q)=1. Compose B1*q and then B0*lifted directly
+            // in the proof DAG, preserving sharing in both multipliers. All
+            // emitted steps are existing PAC additions and monomial products.
+            auto [a1, b1q] = discharge(root1, hypothesis1, boolean.derivation);
+            unsigned lifted = add(multiply(a1, rational(1), {variable}), b1q);
+            auto [a0, b0lifted] = discharge(root0, hypothesis0, lifted);
+            proof.root = add(a0, b0lifted);
         }
         bool unique(std::vector<polynomial> &input, unsigned variables, bool branches) {
             std::vector<ff_unique::poly> equations, disequations;

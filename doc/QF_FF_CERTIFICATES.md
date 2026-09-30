@@ -316,25 +316,31 @@ SMT equality engine. Field calls remain separately bounded commands. The default
 
 `--field-session` also reuses a scoped field-certificate process and is the
 default with native incremental SAT on POSIX (`--no-field-session` disables it).
-Every generated field query declares its symbols and assertions inside a fresh push/pop scope.
-This reuses the process and AST manager (including checked moduli), while proof
-IDs and algebraic state are rebuilt for each query. A random echo delimiter
+Identical generated declarations and expression definitions are retained in the
+native command context; every query's assertions remain inside a fresh push/pop
+scope. Changing a declaration or exceeding the bounded declaration cache resets
+the context before the query. This reuses the process and AST manager (including
+checked moduli), while proof IDs and algebraic state are rebuilt for each query. A random echo delimiter
 frames multiline responses under the same bounded transport; it is not proof
 evidence. Tests alternate fields, symbol declarations, SAT/UNSAT requests and
 scope changes, and independently reject certificates bound to the wrong input.
 
-The current native pipeline checks 366/390 FMCAD inputs and produces 368
-bundles. A full-corpus comparison of bounded producer-side DAG balancing checks
-366 versus 365 without it: one gain, no losses, and a geometric-mean wall-time
-ratio of 1.015 on the 365 common successes. Balancing preserves shared nodes
-and changes only the arithmetic DAG; every output still passes the unchanged
-input-bound verifier and external checkers. It introduces no trusted rule.
-The earlier branch/session comparison improved 358 to 365 with no losses and a
-ratio of 0.842; these are separate timing experiments. All runs use a shared
-10-second production/checking deadline and four workers. There are still 24
-unchecked inputs (seven field-proof budget failures and 17 timeouts); see the
-native audit for remaining integration gates. All 34 acceptance checks pass
-for branch/session recording, and all eight proof checks pass after balancing.
+The latest full-corpus comparison checks 367/390 FMCAD inputs versus 366 for
+the frozen preceding native pipeline: one gain, no losses, and a geometric-mean
+wall-time ratio of 0.939 on 366 common successes. It retains immediate external
+checker completion notification, persistent identical field declarations and
+definitions, and direct composition of branch multipliers in the recorded DAG.
+The checker rules, resource limits, original-input binding and external checks
+are unchanged. Isolated configurations establish each change's contribution;
+see the native audit and `qf-ff-proof-optimizations-20260930` research archive.
+
+All runs use ten seconds for the entire worker and four workers. There are 369
+completed bundles; two do not finish checking in time. The remaining 23 unchecked
+inputs comprise three native construction-budget failures, three checker
+retained-term failures and 17 timeouts. All 34 acceptance checks pass, including
+nonlinear nested branches, input binding, command-scope reset and process cleanup.
+This does not yet certify arbitrary normal solver paths. No cvc5 or Lean result
+was rerun for this milestone.
 
 In the preceding persistent-SAT milestone, on the 390-input FMCAD corpus
 (10 seconds for production plus checking, four

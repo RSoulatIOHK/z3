@@ -102,7 +102,11 @@ SAT or inconclusive children cannot close their parent.
 
 The optional attempt is bounded to depth 8, 64 search nodes and at most 10,000
 additional proof nodes (also at most half the remaining DAG-node allowance).
-Multiplier extraction has a separate 16 MiB estimated temporary-storage bound.
+Branch discharge composes multiplier actions directly in the proof DAG: for
+`1=A+B*h` and a target proof `T=0`, it produces `A=0` and `B*T=0` without
+expanding `B`. Only the existing addition/monomial-multiplication rules are
+emitted. Temporary traversal arrays are linear in the bounded DAG node count;
+the 16 MiB estimated proof-DAG storage cap remains unchanged.
 On local failure the attempt restores the root-scope proof prefix and residual
 equations. Work and cancellation remain charged to the original allowance.
 `:branches false` disables this attempt for ablation. This does not yet cover
@@ -115,7 +119,46 @@ fixtures close before native elimination or basis computation.
 
 ## Current measured acceptance
 
-The current native pipeline checks **366/390** FMCAD inputs within the shared
+The latest controlled full-corpus run checks **367/390** inputs versus 366 for
+the frozen previous native pipeline, with one gain and no losses. On all 366
+common successes the geometric-mean wall-time ratio is **0.939**. All four
+configurations ran all inputs with the same ten-second whole-pipeline deadline,
+four workers and unchanged independent/Alethe/PAC checkers. This is one timing
+run, not a statistical confidence estimate.
+
+The ablation checks 366 with immediate external-process completion notification
+(ratio 0.956 versus baseline), and 366 with declaration reuse added (0.930 versus
+baseline; 0.972 versus notification alone). Direct branch-multiplier composition
+adds the 02v/032t random Zokref determinism case, with a ratio of 1.010 versus
+that otherwise identical pipeline. These three improvements are retained.
+
+There are 369 completed bundles; two exceed the checking deadline. The 23
+unchecked inputs consist of three native construction-budget failures, three
+independent-checker retained-term failures, and 17 timeouts. Full reconstruction
+and ordinary SAT/theory callback integration remain unfinished. A proof emitted
+by the native command is not counted as a checked bundle when export/checking
+fails.
+
+Substitution-term aggregation and indexed RUP replay did not improve a 60-input
+screen (all 24 earlier misses plus 36 successes): time ratios were 0.989 and
+1.050 respectively, with identical coverage. They were discarded. Canonical
+polynomial evidence caching, larger branch bounds, and bounded producer-side
+value deduplication did not add checked diagnostic results and were not retained.
+Disabling digit-uniqueness inference preserved the ordinary search-node counts
+on the sampled determinism misses (5 and 43 nodes). This does not establish that
+digit rules are unnecessary in general; it does not justify implementing them
+as the next fix for these measured failures.
+
+All 34 acceptance checks pass, with six additional nonlinear Boolean-circuit
+regressions, changed-premise rejection, declaration replacement/reset checks,
+and external-process completion, output-limit and cleanup checks. Frozen source,
+binaries, input identities, all receipts and figures are in the separate
+`qf-ff-proof-optimizations-20260930` research archive. No new cvc5 or Lean run was
+performed, and the published PR branches have not been changed by this milestone.
+
+Previous milestone:
+
+The preceding native pipeline checked **366/390** FMCAD inputs within the shared
 10-second production/checking deadline, with four workers. A controlled
 780-run comparison of producer-side DAG balancing against the preceding native
 pipeline checks 366 versus 365: one gain, no losses, and a geometric-mean

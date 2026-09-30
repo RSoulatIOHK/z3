@@ -80,6 +80,23 @@ def branch_cases(binary):
         scoped += f'(push)\n(assert {equations[2]})\n(ff-certify :backend native)\n(pop)\n'
         transcript = native_run(binary,scoped)
         assert transcript.count('(ff-certificate\n') == 1 and transcript.endswith('(ff-certificate-unavailable no-polynomial-refutation)\n'), transcript
+    # Two Boolean inputs select four values of a shared arithmetic circuit.
+    # The closed form agrees on that domain but is not the same polynomial:
+    # (x+y)^(2^depth) = x+y+(2^(2^depth)-2)*x*y for x,y in {0,1}.
+    # Nested discharge must compose multipliers across nonlinear wire proofs.
+    for p in [7, 65537, 2**255-19]:
+        for depth in [2, 3]:
+            names = ['x','y','u']+[f'a{i}' for i in range(depth+1)]
+            declarations = '\n'.join(f'(declare-const {v} F)' for v in names)
+            equations = ['(= (ff.mul x x) x)', '(= (ff.mul y y) y)', '(= a0 (ff.add x y))']
+            equations += [f'(= a{i} (ff.mul a{i-1} a{i-1}))' for i in range(1,depth+1)]
+            coefficient = (2**(2**depth)-2) % p
+            rhs = f'(ff.add x y (ff.mul (as ff{coefficient} F) x y))'
+            equations += [f'(= (ff.mul (ff.add a{depth} (ff.neg {rhs})) u) (as ff1 F))']
+            text = suite.source(p,equations,declarations=declarations)
+            proof = native_run(binary,text)
+            suite.check_both(text,proof); checked += 1
+            suite.rejected(suite.checker.verify, suite.source(p,equations[1:],declarations=declarations),proof)
     # A disconnected Boolean component can leave branching inconclusive even
     # when the remaining nonlinear component has a unit ideal. Native basis
     # fallback must retain the original scope and discard temporary assumptions.
