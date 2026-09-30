@@ -539,7 +539,7 @@ def certificate_command(timeout, backend="auto"):
 
 def produce_bundle(original, directory, z3, timeout=10, prepared=None, backend="auto", boolean_backend="auto", field_session=None):
     fc.require(backend in ("auto", "scalar", "f4", "native"), "invalid certificate backend")
-    fc.require(boolean_backend in ("auto", "native", "incremental", "legacy"), "invalid Boolean backend")
+    fc.require(boolean_backend in ("auto", "native", "incremental", "integrated", "legacy"), "invalid Boolean backend")
     profile, normalized = prepare_profile(original) if prepared is None else prepared
     directory = Path(directory)
     if profile == 'boolean':
@@ -589,7 +589,7 @@ def main():
     parser.add_argument('--ffpacheck', type=Path, required=True)
     parser.add_argument('--timeout', type=float, default=10, help='seconds per external stage')
     parser.add_argument('--backend', choices=['auto', 'scalar', 'f4', 'native'], default='auto', help='bounded polynomial certificate search')
-    parser.add_argument('--boolean-backend', choices=['auto', 'native', 'incremental', 'legacy'], default='auto', help='Boolean certificate search; auto follows the polynomial backend')
+    parser.add_argument('--boolean-backend', choices=['auto', 'native', 'incremental', 'integrated', 'legacy'], default='auto', help='Boolean certificate search; auto follows the polynomial backend')
     parser.add_argument('--field-session', action=argparse.BooleanOptionalAction, default=None,
                         help='reuse a scoped field-certificate process (default for native incremental search on POSIX)')
     parser.add_argument('--check', action='store_true', help='recheck an existing bundle; never regenerate proof bytes')

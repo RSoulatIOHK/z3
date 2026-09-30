@@ -32,7 +32,7 @@ as holes. Lean checking is not implemented by this work.
 | Bit reasoning (`propagate_bits`, `small_bits`) | Boolean premises, no-wrap bounds and exhaustive assignment coverage must be recorded |
 | Finite-field roots and completion | Frobenius axioms, quotient/minimal-polynomial derivations, root completeness and branch closure need proof rules |
 | Tiny-field search (`ff_tiny.cpp`) | Domain pruning and exhaustive closure need local explanations |
-| Boolean combination | Opt-in pipeline now uses native SAT evidence, independently elaborated into resolution; explicit `incremental` mode retains SAT state/trace across monotone field-lemma additions; integration with `ff_sat_tactic.cpp` and its field-lemma callbacks remains |
+| Boolean combination | `--boolean-backend integrated` now records polynomial conflicts in a native `sat::extension` during one CDCL search. `incremental` retains the existing separate SAT/field sessions. Both export checked resolution; ordinary `ff_sat_tactic.cpp` and SMT equality-engine integration remain separate work |
 | SMT combination (`theory_ff.cpp`) | Explanations must connect field lemmas to equality-engine/SAT premises with scope-safe evidence |
 | BV fallback (`ff2bv_tactic.cpp`, theory fallback) | Check encoding equivalence, bit-vector/SAT refutation and premise connection, or explicitly refuse certificate production |
 
@@ -40,6 +40,66 @@ SAT witness probes do not need refutation certificates: they can only establish
 SAT after independent model checking. Failed or incomplete probes cannot close
 an UNSAT branch. Constant contradictions must retain the derivation of the
 constant, including when an earlier transformation made the equation constant.
+
+## Native SAT/theory conflict recording
+
+Select the experimental integration with:
+
+```sh
+python3 scripts/ff_proof_pipeline.py problem.smt2 --out /tmp/ff-integrated \
+  --z3 build/z3 --backend native --boolean-backend integrated \
+  --carcara "$CARCARA" --ffpacheck "$FFPACHECK"
+```
+
+For the Boolean input profile this invokes `ff-integrated-certify` once. A native
+SAT extension selects relevant field literals at a final check, normalizes them
+through a shared AST cache, and invokes the existing recording algebra engine.
+It records the polynomial refutation before adding the negated premise core as
+an ordinary SAT clause after restarting at the root. CDCL propagates the new
+clause and continues with its learned clauses. There are no opaque theory justifications.
+Pure literal-conjunction inputs still use the cheaper standalone field command.
+
+The producer registers positive equalities and explicit inverse-witness equations
+for negative literals. These registrations are an internal protocol, not trusted
+assertions about the original problem. The consumer binds every retained premise
+and variable to the original Boolean/field term graph, checks its polynomial DAG,
+and elaborates native clauses into explicit resolution. A native `unsat` response
+alone cannot complete a bundle. Original-input checking, standalone FFPacheck,
+and Carcara invoking FFPacheck remain mandatory. No new checker rule or Lean
+acceptance is claimed.
+
+AST normalization caches contain only declaration-dependent polynomials. Each
+field check has fresh arithmetic/proof state and a compact variable map, using a
+fresh traversal order so earlier assignments do not change variable ordering.
+Proof factors are renamed back before serialization. Each command owns its SAT
+state, clauses, AST cache and evidence; pop/reset or a failed command cannot
+reuse stale field lemmas. Cancellation rejects incomplete output. An immediate
+input-CNF contradiction bypasses SAT conflict analysis of an empty trail and is
+still checked independently by the consumer.
+
+The command is bounded by the existing polynomial work/term limits, 100,000 nodes
+per field proof, at most 1,024 field lemmas, bounded normalization storage, a
+100,000-clause/1,000,000-literal trace and 32 MiB output. Inconclusive theory
+checks return unavailable, never SAT or an uncertified UNSAT. Theory checks
+currently run at completed Boolean assignments; early theory propagation and
+proofs for general SMT equality-engine combinations are not implemented here.
+This does not enable native Z3 proof objects or cover every ordinary `check-sat`
+UNSAT path.
+
+The Boolean replay uses persistent two-literal watches over globally justified
+clauses, with fresh assignments/reasons for every RUP query. Successful steps
+still emit explicit resolution. It first tries a unit-propagation refutation
+from the checked field lemmas; otherwise it replays the native trace. Both paths
+share the existing 10-million-work budget. A 3,200-query differential regression
+compares acceptance with an independent scan oracle and replays all generated
+resolution steps as the clause database grows.
+
+All 35 acceptance checks pass, including 38 externally checked integration
+bundles, 27 exhaustive mixed SAT controls, seven certified small UNSAT cases,
+two explicitly unavailable cases, eight corrupt native-response checks, scope
+and work-budget recovery, and timer cancellation followed by another command
+in the same process. The empty-trail regression was added after the cancellation
+exercise exposed that producer crash.
 
 ## Shared uniqueness recording
 
@@ -118,6 +178,49 @@ controls, and external Alethe/PAC checks. C++ tests also assert that simple bran
 fixtures close before native elimination or basis computation.
 
 ## Current measured acceptance
+
+The native SAT/theory integration with root restarts checks **369/390** distinct
+FMCAD inputs, exactly the same successful inputs as the retained incremental
+pipeline with watched replay. Both produce 370 bundles. The geometric-mean
+whole-pipeline ratio is **0.994** on their 369 common checked successes: comparable
+performance, not a demonstrated general speedup. Each run has one shared
+10-second production-and-checking deadline and four workers. The 408 member paths
+are deduplicated to 390 inputs. Original-input checking and both external checker
+stages are included in the times.
+
+The initial integration learned field clauses at the current decision level. It
+checked 367/390, losing two near-deadline inputs relative to the retained best.
+In three repetitions of each of those two inputs, that policy timed out 6/6;
+root restarts checked 6/6 in 7.92–8.49 seconds. The existing incremental pipeline
+with watched replay also checked 6/6, in 8.44–9.71 seconds. The subsequent full
+390-input comparison confirmed that root restarts introduce no coverage loss.
+
+An earlier three-way run in this round checked 368 with frozen `ca39e58c5`, 369
+with watched replay and 367 with the initial integration. The watched variant
+was 1.9% faster by geometric mean on the 367 common checked inputs. That extra
+completion was already solved in the previous milestone's best run; it is a
+near-deadline improvement, not a newly covered algebraic problem.
+
+Retain watched replay in the existing incremental native mode and the new
+integration as `--boolean-backend integrated`. Automatic backend selection is
+unchanged. The integration has met coverage parity, but has not unlocked another
+hard input. The same **21** remain: 15 production deadline misses, three native
+proof-budget failures, two independent-checker storage limits, and one produced
+bundle whose external checking exceeds the deadline. Native cancellation may be
+reported as `unavailable` before the outer runner reaches ten seconds; the lower
+count of outer timeouts is not increased coverage.
+
+All 35 acceptance checks pass for the retained implementation, plus 20 consecutive
+timer-cancellation/recovery trials. The final binary was rerun after the
+cancellation-handler fix and again checked the same 369/390 inputs. Inputs, frozen
+binaries/scripts, source patch, 2,340 full-corpus measurements, 240 screening
+measurements, 24 borderline repetitions, checked figures and content-verified
+compressed proof bundles are preserved in the separate
+`qf-ff-native-integration-20260930` research archive. The comparison does not
+rerun cvc5 or establish full reconstruction, theory-combination proof support,
+or Lean acceptance.
+
+## Earlier measured acceptance
 
 The latest controlled full-corpus run checks **367/390** inputs versus 366 for
 the frozen previous native pipeline, with one gain and no losses. On all 366

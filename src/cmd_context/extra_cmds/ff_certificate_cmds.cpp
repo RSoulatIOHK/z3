@@ -1,5 +1,6 @@
 #include "cmd_context/cmd_context.h"
 #include "cmd_context/extra_cmds/ff_certificate_io.h"
+#include "cmd_context/extra_cmds/ff_integrated_cmd.h"
 #include "cmd_context/parametric_cmd.h"
 #include "ast/ff_decl_plugin.h"
 #include "math/polynomial/ff_certificate.h"
@@ -224,4 +225,4 @@ namespace {
         }
     };
 }
-void install_ff_certificate_cmds(cmd_context &ctx) { ctx.insert(alloc(ff_certify_cmd)); ctx.insert(alloc(ff_boolean_certify_cmd)); }
+void install_ff_certificate_cmds(cmd_context &ctx) { ctx.insert(alloc(ff_certify_cmd)); ctx.insert(alloc(ff_boolean_certify_cmd)); install_ff_integrated_cmd(ctx); }

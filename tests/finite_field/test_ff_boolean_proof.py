@@ -106,7 +106,7 @@ def main():
     for name in ['z3','carcara','ffpacheck']: parser.add_argument('--'+name, required=True)
     parser.add_argument('--backend', choices=['auto', 'native'], default='auto')
     parser.add_argument('--field-session', action=argparse.BooleanOptionalAction, default=None)
-    parser.add_argument('--boolean-backend', choices=['auto', 'native', 'incremental', 'legacy'], default='auto')
+    parser.add_argument('--boolean-backend', choices=['auto', 'native', 'incremental', 'integrated', 'legacy'], default='auto')
     args = parser.parse_args()
     factory = (lambda clauses: bp.NativeSearch(clauses, args.z3, time.monotonic() + 10)) if args.backend == 'native' else bp.Search
     if args.boolean_backend == 'incremental':
