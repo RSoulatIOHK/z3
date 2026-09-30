@@ -28,7 +28,7 @@ as holes. Lean checking is not implemented by this work.
 | F4 basis (`ff_f4.cpp`) | Native engine invokes the recording backend and composes residual-input evidence with preceding substitutions |
 | Basis reuse | Still refuses recording; cache entries need replayable, correctly scoped evidence |
 | AST preprocessing (`ff_simplify_tactic.cpp`) | Rewrites, solved equations, zero-test rewrites and compact definitions need checked connections to original assertions |
-| Uniqueness (`ff_unique_tactic.cpp`, shared `ff_unique.h`) | Ring-only recording implemented for class merges, assigned values, matching linear definitions and zero tests with distinct outputs. Digit injectivity, coincident-output zero tests and Boolean branches still need evidence |
+| Uniqueness (`ff_unique_tactic.cpp`, shared `ff_unique.h`) | Ring recording covers class merges, assigned values, matching linear definitions, distinct-output zero tests and bounded Boolean-domain branches. Digit injectivity and coincident-output zero tests still need evidence |
 | Bit reasoning (`propagate_bits`, `small_bits`) | Boolean premises, no-wrap bounds and exhaustive assignment coverage must be recorded |
 | Finite-field roots and completion | Frobenius axioms, quotient/minimal-polynomial derivations, root completeness and branch closure need proof rules |
 | Tiny-field search (`ff_tiny.cpp`) | Domain pruning and exhaustive closure need local explanations |
@@ -61,7 +61,8 @@ let the four proved equations be `A=y-c+alpha*z*M`, `B=t-c+beta*w*M`,
 
 When `d!=c`, multiplication by its inverse proves the equality. When `d==c`,
 this identity is insufficient; recording deliberately skips that rule.
-Digit inference and branches likewise remain disabled with an observer.
+Digit inference remains disabled with an observer. Boolean branches now use the
+ring discharge described below.
 No new trusted checker rule or original-input axiom is introduced.
 
 `ff-certify :backend native :unique false` disables this stage for ablation.
@@ -80,7 +81,65 @@ scope checks, and C++ checks that close 24-layer circuits and zero-test examples
 before elimination/F4/basis search. The complete acceptance suite remains
 required after every implementation change.
 
+## Discharging Boolean-domain branches
+
+The same `unique_solver::search` used by normal uniqueness reasoning can now
+record branches under a proved equation `q=x^2-x=0`. A class's Boolean flag is
+insufficient: canonicalization must supply a derivation of that exact equation,
+including any class aliases and non-unit scaling. Each child records its local
+`x=0` or `x=1` hypothesis. If the two child refutations have the identities
+`1=A0+B0*x` and `1=A1+B1*(x-1)`, removing their local hypothesis nodes gives
+derivations of `A0` and `A1` from the enclosing scope's premises. Then
+
+```
+A0 + B0 * (x*A1 + B1*q) = 1.
+```
+
+This joins both branches using existing PAC addition/multiplication only. The
+final DAG contains original input nodes, not branch assumptions; export rejects
+any undischarged placeholder. Nested branches use the same identity recursively.
+SAT or inconclusive children cannot close their parent.
+
+The optional attempt is bounded to depth 8, 64 search nodes and at most 10,000
+additional proof nodes (also at most half the remaining DAG-node allowance).
+Multiplier extraction has a separate 16 MiB estimated temporary-storage bound.
+On local failure the attempt restores the root-scope proof prefix and residual
+equations. Work and cancellation remain charged to the original allowance.
+`:branches false` disables this attempt for ablation. This does not yet cover
+arbitrary root sets or the bit-bound/digit rules of other native components.
+
+Validation includes 29 independently checked branch proofs over fields through
+521 bits, nested and aliased bits, missing-premise rejection, SAT and budget
+controls, and external Alethe/PAC checks. C++ tests also assert that simple branch
+fixtures close before native elimination or basis computation.
+
 ## Current measured acceptance
+
+With scoped field sessions, larger bounded native work/lemma allowances and
+Boolean-branch recording, the full run checks **365/390** certificates versus
+358 for the preceding native pipeline. There are seven gains and no losses;
+the geometric-mean time ratio is 0.842 on all 358 common successes. Disabling
+only branch recording checks 364: enabling it adds one checked result, loses
+none, and has a time ratio of 1.010 on 364 common successes. This meets the
+coverage/performance criterion for retaining the branch attempt.
+
+The revised path produces 367 bundles; two miss the checking deadline. Its 25
+unchecked inputs comprise eight unavailable results and 17 timeouts. Published
+PR2 checks 356 in the same run: the revised path has ten gains and one loss,
+and a time ratio of 0.840 on 355 common successes. This remains incomplete and
+does not justify claiming full reconstruction or coverage-preserving replacement
+of published PR2. Each configuration ran all 390 distinct inputs under a shared
+10-second whole-pipeline limit with four workers. Timings are from a single run.
+
+All 34 acceptance checks pass. The eight proof acceptance checks also pass
+after promoting the measured selection: on POSIX, `--backend native` now uses
+incremental SAT and scoped field sessions by default. Explicit `native` Boolean
+search and `--no-field-session` retain one-shot alternatives; default `auto`
+reconstruction is unchanged. Frozen inputs, binaries, scripts, all receipts and
+figures are retained in the separate `qf-ff-proof-branches-20260930` research
+archive. No cvc5 comparison was rerun for this milestone.
+
+Earlier measurements:
 
 The subsequent persistent-SAT milestone passes all 34 acceptance checks. Its
 full-corpus run checks 358/390 certificates in both one-shot and persistent

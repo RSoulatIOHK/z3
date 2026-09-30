@@ -6,6 +6,7 @@ reconstructs the input clauses, checks each field lemma, and replays resolution.
 No SAT answer or unrecorded preprocessing step is accepted as evidence.
 """
 import json
+import os
 from pathlib import Path
 import re
 import time
@@ -14,7 +15,7 @@ import ff_certificate as fc
 
 MAX_NODES = 100000
 MAX_RECORDS = 50000
-MAX_LEMMAS = 256
+MAX_LEMMAS = 1024
 
 
 def require(c, message):
@@ -589,21 +590,26 @@ def compact(g, literals, dag):
     return core, result
 
 
-def produce(original, z3, timeout, backend="auto", boolean_backend="auto"):
+def produce(original, z3, timeout, backend="auto", boolean_backend="auto", field_session=None):
     require(backend in ("auto", "scalar", "f4", "native"), "invalid certificate backend")
     require(boolean_backend in ("auto", "native", "incremental", "legacy"), "invalid Boolean backend")
     import ff_proof_pipeline as pp
     start = time.monotonic(); g = Graph(original); base = Clauses(g)
     native = boolean_backend == "native" or (boolean_backend == "auto" and backend == "native")
-    search = (IncrementalSearch(base.clauses, z3, start + timeout) if boolean_backend == "incremental" else
+    incremental = boolean_backend == "incremental" or (boolean_backend == "auto" and backend == "native" and os.name == 'posix')
+    if field_session is None: field_session = incremental and backend == 'native'
+    search = (IncrementalSearch(base.clauses, z3, start + timeout) if incremental else
               NativeSearch(base.clauses, z3, start + timeout) if native else Search(base.clauses))
+    field = None
     try:
-        return produce_search(g, base, search, z3, start, timeout, backend)
+        if field_session: field = pp.FieldSession(z3)
+        return produce_search(g, base, search, z3, start, timeout, backend, field)
     finally:
+        if field is not None: field.close()
         if isinstance(search, NativeSearch): search.close()
 
 
-def produce_search(g, base, search, z3, start, timeout, backend):
+def produce_search(g, base, search, z3, start, timeout, backend, field=None):
     import ff_proof_pipeline as pp
     lemmas = 0
     while True:
@@ -633,7 +639,8 @@ def produce_search(g, base, search, z3, start, timeout, backend):
         require(literals, 'no field conflict (possibly satisfiable)')
         case = Case(g, literals)
         remaining = timeout - (time.monotonic() - start); require(remaining > 0, 'Boolean pipeline timeout')
-        output = pp.run([str(z3), '-in'], remaining, case.normalized() + pp.certificate_command(remaining, backend))['stdout']
+        output = (field.query(case.normalized(), start + timeout, backend) if field is not None else
+                  pp.run([str(z3), '-in'], remaining, case.normalized() + pp.certificate_command(remaining, backend))['stdout'])
         require(output.startswith('(ff-certificate\n'), 'field certificate unavailable: ' + output[:300].strip())
         core, dag = compact(g, literals, output)
         search.append(clause(-x for x in core), dict(rule='field', literals=core, certificate=dag))
@@ -757,8 +764,8 @@ def verify_export(original, proof):
     return files
 
 
-def produce_bundle(original, directory, z3, timeout, backend="auto", boolean_backend="auto"):
-    proof = produce(original, z3, timeout, backend, boolean_backend)
+def produce_bundle(original, directory, z3, timeout, backend="auto", boolean_backend="auto", field_session=None):
+    proof = produce(original, z3, timeout, backend, boolean_backend, field_session)
     files = verify_export(original, proof)
     files['boolean-certificate.json'] = json.dumps(proof, separators=(',', ':')) + '\n'
     require(len(files['boolean-certificate.json']) <= 32*1024*1024, 'Boolean certificate size limit')

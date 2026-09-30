@@ -5,7 +5,53 @@ import sys
 import time
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 import test_ff_boolean_proof as suite
+
+
+def field_scopes(binary):
+    field = suite.pp.FieldSession(binary)
+    pid = field.session.child.pid
+    try:
+        for p in [7, 2**255-19, 2, 65537, 7]:
+            # Reuse the very same symbols at different sorts across scopes.
+            # A contradiction from the preceding scope must not justify SAT input.
+            prefix = f'(set-logic QF_FF)\n(declare-const x (_ FiniteField {p}))\n'
+            zero, one = f'#f0m{p}', f'#f1m{p}'
+            sat = prefix + f'(assert (= x {zero}))\n'
+            unsat = sat + f'(assert (= x {one}))\n'
+            for text, expected in [(unsat, True), (sat, False), (unsat, True)]:
+                proof = field.query(text, time.monotonic()+10, 'native')
+                assert field.session.child.pid == pid
+                assert proof.startswith('(ff-certificate\n') == expected, proof
+                if expected:
+                    suite.pp.fc.verify(text, proof)
+                    suite.reject(lambda: suite.pp.fc.verify(sat, proof))
+        suite.reject(lambda: field.query(sat, time.monotonic()-1, 'native'))
+    finally:
+        field.close()
+    assert field.session.child.poll() is not None
+    # Multiline framing is bounded and cannot mistake an incomplete response for
+    # a completed certificate merely because some newlines have arrived.
+    process = suite.pp.NativeSession(binary)
+    suite.reject(lambda: process.exchange('(echo "partial")\n', time.monotonic()+.02,
+                                         b'\nmissing terminator\n'))
+    assert process.closed and process.child.poll() is not None
+    # The promoted native default must take the measured persistent paths, with
+    # more than one field conflict; one-shot SAT querying is forbidden here.
+    pids = []
+    query = suite.pp.FieldSession.query
+    def record_query(self, *args, **kwargs):
+        pids.append(self.session.child.pid)
+        return query(self, *args, **kwargs)
+    text = suite.source('(assert (or (= x (as ff0 F)) (= x (as ff1 F))))\n'
+                        '(assert (= x (as ff2 F)))')
+    with patch.object(suite.bp.NativeSearch, 'query', side_effect=AssertionError('unexpected one-shot SAT')):
+        with patch.object(suite.pp.FieldSession, 'query', record_query):
+            proof = suite.bp.produce(text, binary, 10, backend='native')
+    suite.bp.verify_export(text, proof)
+    assert len(pids) >= 2 and len(set(pids)) == 1, pids
+    print('field session: isolated premises/declarations, changing fields, input binding and incomplete framing checked')
 
 
 def sessions(binary):
@@ -97,5 +143,6 @@ if __name__ == '__main__':
     parser.add_argument('--z3', required=True)
     args, _ = parser.parse_known_args()
     sessions(args.z3)
-    sys.argv.extend(['--backend', 'native', '--boolean-backend', 'incremental'])
+    field_scopes(args.z3)
+    sys.argv.extend(['--backend', 'native', '--boolean-backend', 'incremental', '--field-session'])
     suite.main()

@@ -104,6 +104,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ['z3','carcara','ffpacheck']: parser.add_argument('--'+name, required=True)
     parser.add_argument('--backend', choices=['auto', 'native'], default='auto')
+    parser.add_argument('--field-session', action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument('--boolean-backend', choices=['auto', 'native', 'incremental', 'legacy'], default='auto')
     args = parser.parse_args()
     factory = (lambda clauses: bp.NativeSearch(clauses, args.z3, time.monotonic() + 10)) if args.backend == 'native' else bp.Search
@@ -115,7 +116,7 @@ def main():
         root = Path(temp)
         def certify(text):
             nonlocal checked
-            proof = bp.produce(text, args.z3, 10, backend=args.backend,boolean_backend=args.boolean_backend)
+            proof = bp.produce(text, args.z3, 10, backend=args.backend,boolean_backend=args.boolean_backend,field_session=args.field_session)
             files = bp.verify_export(text, proof)
             d = root / str(checked); d.mkdir()
             (d/'problem.smt2').write_text(text)
@@ -194,7 +195,7 @@ def main():
             chain = f'(define-fun t{i} () Bool (and t{i-1} t{i-1}))\n' + chain
         text = source(chain,extra='(define-fun t0 () Bool a)')
         g=bp.Graph(text); assert len(g.nodes) < 410
-        proof=bp.produce(text,args.z3,10,backend=args.backend,boolean_backend=args.boolean_backend); files=bp.verify_export(text,proof)
+        proof=bp.produce(text,args.z3,10,backend=args.backend,boolean_backend=args.boolean_backend,field_session=args.field_session); files=bp.verify_export(text,proof)
         assert len(files['proof.alethe']) < 1000000
         # Exhaustively adjudicate randomized mixed formulas over tiny fields.
         rng=random.Random(1919)
@@ -209,7 +210,7 @@ def main():
                 body=f'(and {rng.choice(terms)} (not {rng.choice(terms)}))'
                 text=source('(assert '+body+')',p); g=bp.Graph(text)
                 sat=any(evaluate(g,dict(zip(['a','b','x','y'],v))) for v in itertools.product([False,True],[False,True],range(p),range(p)))
-                try: proof=bp.produce(text,args.z3,3,backend=args.backend,boolean_backend=args.boolean_backend)
+                try: proof=bp.produce(text,args.z3,3,backend=args.backend,boolean_backend=args.boolean_backend,field_session=args.field_session)
                 except pp.fc.Invalid:
                     if sat: sat_count+=1
                     else: unknown_count+=1
@@ -241,7 +242,7 @@ def main():
             path.write_text(old)
         # No variable declaration can accidentally provide the modulus check.
         constant=source('(assert (= (as ff2 F) (as ff0 F)))',3)
-        proof=bp.produce(constant,args.z3,10,backend=args.backend,boolean_backend=args.boolean_backend)
+        proof=bp.produce(constant,args.z3,10,backend=args.backend,boolean_backend=args.boolean_backend,field_session=args.field_session)
         wrong=constant.replace('FiniteField 3','FiniteField 2')
         reject(lambda:bp.verify_export(wrong,proof));rejected+=1
         for text in [

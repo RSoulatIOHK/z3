@@ -55,6 +55,11 @@ and `:timeout` on `ff-certify`; the node and DAG-storage ceilings remain absolut
 The profile bounds moduli to 4096 bits and monomials to degree 1024. The checker
 has separate work/size limits and can refuse an otherwise valid large proof.
 The producer's storage estimate is not a total-process memory bound.
+The experimental Python `--backend native` pipeline requests a 20M operation
+allowance because it charges algebra and proof construction together. Its wall
+deadline and the command's DAG/term/storage limits still apply. The standalone
+command's default remains 2M. Boolean proof bundles permit at most 1,024 field
+lemmas, subject also to the existing record, byte and checking limits.
 
 ### Evidence DAG version 1
 
@@ -256,10 +261,12 @@ This is a first integration step, not proof recording throughout normal
 residual equations go to the native F4 or legacy basis computation with recording enabled; F4 inputs are linked back to the earlier substitutions.
 The Boolean orchestration remains separate, but the native backend now uses Z3 SAT search with recorded clause evidence instead of Python DPLL. Shared uniqueness
 records affine class/value propagation, matching definitions, and zero-test
-matching with distinct outputs; `:unique false` disables it for ablation.
+matching with distinct outputs, and bounded Boolean-domain branches whose local
+assumptions are discharged into ordinary ring identities. `:unique false`
+disables the shared stage; `:branches false` disables only its branch attempt.
 See [the native proof audit](QF_FF_NATIVE_PROOFS.md) for its exact identities.
 Recording bit decomposition, the remaining uniqueness rules, finite-field root
-reasoning and exhaustive branches, AST preprocessing and definitional extensions,
+reasoning and general exhaustive branches, AST preprocessing and definitional extensions,
 and native SAT/theory conflict resolution remains necessary before claiming evidence for every native UNSAT path. Each path must
 produce independently checked evidence or explicitly report unavailable.
 
@@ -267,7 +274,8 @@ produce independently checked evidence or explicitly report unavailable.
 corruption, input-binding and resource oracle suite with the native backend,
 plus nonlinear cubic substitutions with non-unit pivots over five fields up to
 521 bits, 32 forced native scalar/matrix/storage configurations, and 69 shared
-uniqueness proofs with SAT, changed-premise and incremental-scope controls. Native C++
+uniqueness proofs and 29 Boolean-branch proofs with SAT, changed-premise and
+incremental-scope controls. Native C++
 tests also ensure those hooks exercise fused and geobucket reduction, matrix
 elimination, lazy reducers and sparse reducer selection. This test is included in the proof acceptance suite.
 
@@ -288,8 +296,8 @@ logical consequences. The final certificate still uses the unchanged independent
 Boolean/Alethe verifier and externally checked field lemmas.
 
 
-`--boolean-backend incremental` is an explicit experimental alternative to the
-one-shot `native` Boolean backend. It holds one native SAT process/solver across
+On POSIX, the experimental `--backend native` pipeline selects
+`--boolean-backend incremental` by default. It holds one native SAT process/solver across
 field lemmas, adding only newly bound clauses. The command
 `ff-boolean-certify :incremental true` retains the complete clause trace as well
 as native search state. Reuse requires an unchanged assertion prefix; removal,
@@ -303,11 +311,29 @@ input/output and a shared absolute deadline. It drains both output streams while
 writing, closes its process on errors, and is closed in the producer's `finally`
 block. This does not yet integrate field proof callbacks into `ff-sat` or the
 SMT equality engine. Field calls remain separately bounded commands. The default
-Boolean backend selection remains unchanged. The full-corpus measurement below
-justifies retaining this option, but does not close the remaining coverage gaps
-against published PR2 or the native proof integration gates.
+`auto` reconstruction backend remains unchanged. Explicit
+`--boolean-backend native` selects one-shot SAT for comparison.
 
-On the 390-input FMCAD corpus (10 seconds for production plus checking, four
+`--field-session` also reuses a scoped field-certificate process and is the
+default with native incremental SAT on POSIX (`--no-field-session` disables it).
+Every generated field query declares its symbols and assertions inside a fresh push/pop scope.
+This reuses the process and AST manager (including checked moduli), while proof
+IDs and algebraic state are rebuilt for each query. A random echo delimiter
+frames multiline responses under the same bounded transport; it is not proof
+evidence. Tests alternate fields, symbol declarations, SAT/UNSAT requests and
+scope changes, and independently reject certificates bound to the wrong input.
+
+The revised configuration checks 365/390 FMCAD inputs versus 358 for the previous
+native pipeline, with seven gains, no losses and a geometric-mean time ratio of
+0.842. Disabling only branch recording checks 364 with no extra successes and a
+ratio of 1.010 for branches enabled/disabled on the 364 common successes. All runs
+use a shared 10-second production/checking deadline and four workers. There are
+still 25 unchecked inputs; see the native audit for the complete comparison and
+the remaining integration gates. All 34 acceptance checks pass, including
+external checking of branch proofs, scope recovery and input binding.
+
+In the preceding persistent-SAT milestone, on the 390-input FMCAD corpus
+(10 seconds for production plus checking, four
 workers), persistent and one-shot native search both check 358 certificates with
 identical coverage. Persistence reduces geometric-mean wall time by 12.9% on
 those successes. It produces 360 bundles; two miss the checking deadline. The

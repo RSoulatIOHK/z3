@@ -315,13 +315,14 @@ class NativeSession:
             self.close()
             raise
 
-    def exchange(self, text, deadline):
+    def exchange(self, text, deadline, delimiter=b'\n'):
         import selectors
         data = text.encode()
         offset = 0
         try:
             fc.require(len(data) <= LIMIT, 'native session input limit')
             fc.require(not self.closed, 'native session is closed')
+            fc.require(isinstance(delimiter, bytes) and delimiter, 'invalid native session delimiter')
             with selectors.DefaultSelector() as ready:
                 ready.register(self.child.stdin, selectors.EVENT_WRITE, 'input')
                 ready.register(self.child.stdout, selectors.EVENT_READ, 'output')
@@ -329,8 +330,8 @@ class NativeSession:
                 while True:
                     remaining = deadline - time.monotonic()
                     fc.require(remaining > 0, 'native session timeout')
-                    if offset == len(data) and b'\n' in self.output:
-                        line, _, rest = self.output.partition(b'\n')
+                    if offset == len(data) and delimiter in self.output:
+                        line, _, rest = self.output.partition(delimiter)
                         self.output = bytearray(rest)
                         fc.require(not self.errors, 'native session stderr: ' + self.errors.decode(errors='replace')[:1000])
                         return line.decode() + '\n'
@@ -366,6 +367,35 @@ class NativeSession:
         except Exception: pass
 
 
+class FieldSession:
+    """Reuse a process/AST manager, but isolate every field query's premises.
+
+    Only generated Case.normalized() inputs are sent here. A fresh command scope
+    owns declarations and assertions; no algebraic result or proof ID is reused.
+    The nonce delimits multiline output, never authorizes a proof step.
+    """
+    def __init__(self, binary):
+        self.session = NativeSession(binary)
+        self.started = False
+
+    def query(self, normalized, deadline, backend):
+        import secrets
+        header = '(set-logic QF_FF)\n'
+        fc.require(normalized.startswith(header), 'expected normalized field query')
+        remaining = deadline - time.monotonic()
+        fc.require(remaining > 0, 'field session timeout')
+        marker = 'ff_session_end_' + secrets.token_hex(16)
+        text = '' if self.started else header
+        text += '(push)\n' + normalized[len(header):] + certificate_command(remaining, backend)
+        text += f'(pop)\n(echo "{marker}")\n'
+        result = self.session.exchange(text, deadline, ('\n' + marker + '\n').encode())
+        self.started = True
+        return result
+
+    def close(self):
+        self.session.close()
+
+
 def prepare_profile(original):
     """Keep the cheaper v1 path when applicable; use v2 for Boolean/deep input."""
     try:
@@ -380,17 +410,20 @@ def certificate_command(timeout, backend="auto"):
     fc.require(backend in ("auto", "scalar", "f4", "native"), "invalid certificate backend")
     # Omitting auto preserves compatibility with pre-backend-selector binaries.
     option = "" if backend == "auto" else f" :backend {backend}"
+    # Native recording charges both algebra and proof construction to this
+    # allowance. The wall deadline and DAG/term/storage caps remain independent.
+    if backend == 'native': option += ' :max_steps 20000000'
     return f"(ff-certify{option} :timeout {max(1, int(timeout * 900))})\n"
 
 
-def produce_bundle(original, directory, z3, timeout=10, prepared=None, backend="auto", boolean_backend="auto"):
+def produce_bundle(original, directory, z3, timeout=10, prepared=None, backend="auto", boolean_backend="auto", field_session=None):
     fc.require(backend in ("auto", "scalar", "f4", "native"), "invalid certificate backend")
     fc.require(boolean_backend in ("auto", "native", "incremental", "legacy"), "invalid Boolean backend")
     profile, normalized = prepare_profile(original) if prepared is None else prepared
     directory = Path(directory)
     if profile == 'boolean':
         import ff_boolean_proof as bp
-        count = bp.produce_bundle(original, directory, z3, timeout, backend, boolean_backend)
+        count = bp.produce_bundle(original, directory, z3, timeout, backend, boolean_backend, field_session)
         return dict(profile='z3-ff-alethe-pac-v2', field_lemmas=count)
     cmd = normalized + certificate_command(timeout, backend)
     result = run([str(z3), '-in'], timeout, cmd)
@@ -435,6 +468,8 @@ def main():
     parser.add_argument('--timeout', type=float, default=10, help='seconds per external stage')
     parser.add_argument('--backend', choices=['auto', 'scalar', 'f4', 'native'], default='auto', help='bounded polynomial certificate search')
     parser.add_argument('--boolean-backend', choices=['auto', 'native', 'incremental', 'legacy'], default='auto', help='Boolean certificate search; auto follows the polynomial backend')
+    parser.add_argument('--field-session', action=argparse.BooleanOptionalAction, default=None,
+                        help='reuse a scoped field-certificate process (default for native incremental search on POSIX)')
     parser.add_argument('--check', action='store_true', help='recheck an existing bundle; never regenerate proof bytes')
     args = parser.parse_args()
     start = time.monotonic()
@@ -447,7 +482,7 @@ def main():
             prepared = prepare_profile(original)
             args.out.mkdir(parents=True, exist_ok=False)
             (args.out / 'problem.smt2').write_text(original)
-            results.update(produce_bundle(original, args.out, args.z3.resolve(), args.timeout, prepared, args.backend, args.boolean_backend))
+            results.update(produce_bundle(original, args.out, args.z3.resolve(), args.timeout, prepared, args.backend, args.boolean_backend, args.field_session))
         results.update(check_bundle(args.out.resolve(), args.carcara.resolve(), args.ffpacheck.resolve(), args.timeout))
         results['status'] = 'checked'
         if not args.check:
