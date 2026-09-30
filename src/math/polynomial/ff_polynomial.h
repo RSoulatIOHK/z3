@@ -42,7 +42,7 @@ namespace ff {
         virtual bool contradiction(polynomial const &) { return false; }
         virtual bool import_f4(certificate const &, std::vector<polynomial> const &) { return false; }
     };
-    struct exhausted {};
+    struct exhausted { char const* reason = "resource"; };
     // Exact, bounded memoization of basis computations. Entries contain only
     // polynomial data and numeric premise indices, never context-owned ASTs.
     struct basis_cache {

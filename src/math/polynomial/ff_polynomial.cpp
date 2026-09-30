@@ -509,12 +509,12 @@ namespace ff {
         if (++work > max_work) {
             ++m_step_exhaustions;
             ++m_local_work_exhaustions;
-            throw exhausted();
+            throw exhausted{"polynomial-work"};
         }
         if (!limit.inc()) {
             ++m_step_exhaustions;
             ++m_shared_limit_exhaustions;
-            throw exhausted();
+            throw exhausted{"canceled"};
         }
     }
     rational engine::coefficient_residue(rational const &a) {
@@ -558,7 +558,7 @@ namespace ff {
             m_polynomial_terms_exhaustions += f.size() > max_terms;
             m_monomial_degree_exhaustions += mon.size() > 1024;
             ++m_term_exhaustions;
-            throw exhausted();
+            throw exhausted{f.size() > max_terms ? "polynomial-terms" : "monomial-degree"};
         }
     }
     polynomial engine::constant(rational const &c) {

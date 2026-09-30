@@ -24,8 +24,8 @@ namespace ff {
             // coefficient/factor storage. This is an estimate, not process RSS.
             size_t cost = 3 * (sizeof(n) + n.factor.capacity() * sizeof(unsigned) +
                               2 * (e.p.get_num_bits() / 8 + 1));
-            if (proof.nodes.size() >= max_nodes || cost > 16 * 1024 * 1024 - bytes)
-                throw exhausted();
+            if (proof.nodes.size() >= max_nodes) throw exhausted{"proof-nodes"};
+            if (cost > 16 * 1024 * 1024 - bytes) throw exhausted{"proof-bytes"};
             bytes += cost;
             unsigned id = proof.nodes.size();
             proof.nodes.push_back(std::move(n));

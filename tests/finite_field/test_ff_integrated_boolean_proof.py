@@ -49,6 +49,29 @@ def sessions(binary):
     print('integrated scopes: budget recovery, push/pop, reset-assertions and changing fields checked')
 
 
+def diagnostics(binary):
+    script = """(set-logic ALL)
+(declare-const x (_ FiniteField 7))
+(declare-const b0 Bool)
+(declare-const b1 Bool)
+(assert (= b0 (= x #f0m7)))
+(assert (= b1 (= x #f1m7)))
+(assert b0)
+(assert b1)
+(ff-integrated-certify :max_nodes 1 :diagnostics true)
+(ff-integrated-certify :diagnostics true)
+"""
+    result = suite.pp.run([binary, '-in'], 10, script)
+    objects = suite.pp.fc.parse(result['stdout'])
+    assert objects[0] == ['ff-integrated-unavailable', 'field-proof-budget/proof-nodes'], objects
+    assert objects[1][0] == 'ff-integrated-result', objects
+    assert 'ff-theory check=' in result['stderr'] and 'proof_us=' in result['stderr'], result
+    # Diagnostics stay out of the certificate protocol and are opt-in.
+    quiet = suite.pp.run([binary, '-in'], 10, script.replace(' :diagnostics true', ''))
+    assert quiet['stdout'] == result['stdout'] and not quiet['stderr'], quiet
+    print('integrated resource reasons, diagnostic stream separation and recovery checked')
+
+
 def cancellation(binary):
     # Pigeonhole CNF is independent of field algebra and cannot close within
     # this one-millisecond allowance. A later command in the same process must
@@ -150,6 +173,7 @@ if __name__ == '__main__':
     parser.add_argument('--z3', required=True)
     args, _ = parser.parse_known_args()
     sessions(args.z3)
+    diagnostics(args.z3)
     cancellation(args.z3)
     corruptions(args.z3)
     sys.argv.extend(['--backend','native','--boolean-backend','integrated'])

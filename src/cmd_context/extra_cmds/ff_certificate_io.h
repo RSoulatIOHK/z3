@@ -56,7 +56,7 @@ public:
             }
             else throw cmd_exception("unsupported finite-field certificate operator");
             for (auto const& [mon, c] : f) cached_terms += 1 + mon.size();
-            if (cached_terms > cache_limit) throw ff::exhausted();
+            if (cached_terms > cache_limit) throw ff::exhausted{"normalization-storage"};
             cache.emplace(t, std::move(f));
         }
         return cache.at(root);

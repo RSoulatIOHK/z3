@@ -10,6 +10,8 @@
 #include "util/scoped_timer.h"
 #include <sstream>
 #include <algorithm>
+#include <chrono>
+#include "util/util.h"
 
 namespace {
     struct clause_recorder : sat::clause_eh {
@@ -52,13 +54,15 @@ namespace {
         std::vector<std::string> lemmas;
         size_t proof_bytes = 0;
         unsigned max_lemmas;
+        std::ostream* diagnostics;
+        unsigned checks = 0;
         std::vector<unsigned> minimize_order;
         std::string unknown = "no-polynomial-refutation";
     public:
         proof_extension(ast_manager& m, ff_certificate_io& io, ff::engine& normalization, rational const& p,
-                        params_ref const& params, unsigned max_lemmas) :
+                        params_ref const& params, unsigned max_lemmas, std::ostream* diagnostics) :
             sat::extension(symbol("finite-field-certificates"), 0), m(m), io(io), normalization(normalization), prime(p),
-            params(params), max_lemmas(max_lemmas) {}
+            params(params), max_lemmas(max_lemmas), diagnostics(diagnostics) {}
         void bind(sat::literal l, binding& b) {
             bindings.emplace(l.index(), &b); ordered_bindings.emplace_back(l, &b);
         }
@@ -81,6 +85,7 @@ namespace {
 
         sat::check_result check() override {
             try {
+                ++checks;
                 if (lemmas.size() >= max_lemmas) { unknown = "field-lemma-limit"; return sat::check_result::CR_GIVEUP; }
                 // A partial assignment still satisfying every original/field
                 // clause suffices. Do not force irrelevant disequalities into
@@ -161,6 +166,15 @@ namespace {
                 ff::engine arithmetic(prime, m.limit(), params.get_uint("max_steps", 20000000),
                                       params.get_uint("max_terms", 4096), options.ff_bit_propagation(), options.ff_batch(), false);
                 ff::configure_engine(arithmetic, options);
+                auto started = diagnostics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+                on_scope_exit record_stats([&]() {
+                    if (!diagnostics) return;
+                    auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-started).count();
+                    *diagnostics << "ff-theory check=" << checks << " lemmas=" << lemmas.size()
+                                 << " equations=" << equations.size() << " variables=" << to_global.size()
+                                 << " proof_us=" << us << " steps=" << arithmetic.steps() << '\n';
+                    statistics stats; arithmetic.collect_statistics(stats); stats.display_smt2(*diagnostics); *diagnostics << '\n';
+                });
                 ff::certificate proof;
                 if (!ff::certify(arithmetic, equations, proof, params.get_uint("max_nodes", 100000), ff::certificate_backend::native))
                     return sat::check_result::CR_GIVEUP;
@@ -201,8 +215,8 @@ namespace {
                 s().mk_clause(conflict, sat::status::th(false, get_id()));
                 return sat::check_result::CR_CONTINUE;
             }
-            catch (ff::exhausted const&) {
-                unknown = m.limit().is_canceled() ? "canceled" : "field-proof-budget";
+            catch (ff::exhausted const& ex) {
+                unknown = m.limit().is_canceled() ? "canceled" : std::string("field-proof-budget/") + ex.reason;
                 return sat::check_result::CR_GIVEUP;
             }
         }
@@ -219,6 +233,7 @@ namespace {
             d.insert("max_steps", CPK_UINT, "polynomial work per theory check", "20000000");
             d.insert("max_terms", CPK_UINT, "terms per polynomial", "4096");
             d.insert("max_nodes", CPK_UINT, "nodes per field certificate", "100000");
+            d.insert("diagnostics", CPK_BOOL, "print field-check resource statistics to the diagnostic stream", "false");
             d.insert("max_lemmas", CPK_UINT, "field lemma count limit", "1024");
         }
         void execute(cmd_context& ctx) override {
@@ -271,7 +286,7 @@ namespace {
             // One command owns the entire state. Push/pop/reset between commands
             // cannot leave stale learned clauses, AST references, or certificates.
             solver.set_incremental(true); solver.set_drat(true); solver.get_drat().set_clause_eh(recorder);
-            auto* extension = alloc(proof_extension, m, io, normalization, prime, m_params, std::min(1024u, m_params.get_uint("max_lemmas", 1024)));
+            auto* extension = alloc(proof_extension, m, io, normalization, prime, m_params, std::min(1024u, m_params.get_uint("max_lemmas", 1024)), m_params.get_bool("diagnostics", false) ? &ctx.diagnostic_stream() : nullptr);
             solver.set_extension(extension); // solver owns the extension
             std::unordered_map<expr*, sat::literal> literals;
             ptr_vector<expr> names;
