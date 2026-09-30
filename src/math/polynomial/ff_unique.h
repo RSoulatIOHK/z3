@@ -3,7 +3,8 @@ Copyright (c) 2026
 
 Shared finite-field uniqueness propagation. The tactic and certificate producer
 use the same worklist and functional-definition matching. Ring-only recording
-is optional; digit, coincident-output zero-test and branch evidence remain unsupported.
+is optional and can discharge Boolean-domain branches. Digit and coincident-output
+zero-test evidence remain unsupported.
 --*/
 #pragma once
 #include "util/rational.h"
@@ -23,6 +24,16 @@ namespace ff_unique {
         unsigned derivation = ~0u;
     };
 
+    inline bool boolean_polynomial(poly const &f, rational const &p, unsigned &variable, rational &coefficient) {
+        if (f.size() != 2) return false;
+        auto a = f.begin(), b = std::next(a);
+        if (a->first.size() == 1) std::swap(a, b);
+        if (a->first.size() != 2 || a->first[0] != a->first[1] || b->first.size() != 1 ||
+            b->first[0] != a->first[0] || !mod(a->second + b->second, p).is_zero()) return false;
+        variable = b->first[0]; coefficient = a->second;
+        return true;
+    }
+
     // Evidence is emitted by the same propagation used by ff-unique. Unsupported
     // domain/branch rules are disabled when this sink is present, never trusted.
     struct observer {
@@ -32,6 +43,10 @@ namespace ff_unique {
         virtual unsigned multiply(unsigned id, rational const &c, monomial const &factor) = 0;
         virtual poly substitute(poly const &row, unsigned variable, poly const &definition) = 0;
         virtual void conflict(poly const &constant) = 0;
+        virtual unsigned assume(unsigned variable, rational const &value) = 0;
+        virtual unsigned branch_result() const = 0;
+        virtual void join_branches(unsigned variable, poly const &boolean,
+                                   unsigned hypothesis0, unsigned root0, unsigned hypothesis1, unsigned root1) = 0;
     };
 
     struct exhausted_budget {};
@@ -653,19 +668,37 @@ namespace ff_unique {
                 throw exhausted_budget();
             if (propagate(st))
                 return true;
-            // Branch assumptions and bit-domain completeness need additional
-            // evidence. Do not let an unrecorded split close a certificate.
-            if (depth == 0 || proof)
+            return split(st, depth);
+        }
+
+        bool split(state &st, unsigned depth) {
+            if (depth == 0)
                 return false;
             std::map<unsigned, unsigned> score;
+            std::map<unsigned, poly> bit_facts;
             for (auto const &f : eqs) {
                 poly g = canon(st, f);
+                unsigned variable; rational coefficient;
+                if (proof && boolean_polynomial(g, p, variable, coefficient)) {
+                    // A class flag is not evidence: retain the actual canonical
+                    // equation proving v^2-v=0 at this branch's active scope.
+                    g.derivation = proof->scale(g.derivation, inv(coefficient));
+                    poly fact;
+                    fact[{variable, variable}] = rational(1);
+                    fact[{variable}] = p-rational(1);
+                    fact.derivation = g.derivation;
+                    bit_facts.emplace(variable, std::move(fact));
+                }
                 std::set<unsigned> vs;
                 for (auto const &[m, c] : g)
                     vs.insert(m.begin(), m.end());
                 for (unsigned v : vs)
-                    if (st.is_bool[v])
+                    if (st.is_bool[v] && !st.has_val[v])
                         ++score[v];
+            }
+            if (proof) {
+                for (auto it = score.begin(); it != score.end();)
+                    if (!bit_facts.contains(it->first)) it = score.erase(it); else ++it;
             }
             if (score.empty())
                 return false;
@@ -674,14 +707,20 @@ namespace ff_unique {
                 if (s > score[best])
                     best = v;
             ++m_splits;
+            unsigned hypotheses[2] = {~0u, ~0u}, roots[2] = {~0u, ~0u};
             for (unsigned value = 0; value < 2; ++value) {
                 work.charge(st.parent.size());
                 state child = st;
-                if (child.set(best, rational(value)) == 2)
+                if (proof) child.value_proof[best] = hypotheses[value] = proof->assume(best, rational(value));
+                if (child.set(best, rational(value)) == 2) {
+                    if (proof) throw exhausted_budget();
                     continue;
+                }
                 if (!search(child, depth - 1))
                     return false;
+                if (proof) roots[value] = proof->branch_result();
             }
+            if (proof) proof->join_branches(best, bit_facts.at(best), hypotheses[0], roots[0], hypotheses[1], roots[1]);
             return true;
         }
 

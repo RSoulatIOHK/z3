@@ -151,6 +151,7 @@ namespace {
         void init_pdescrs(cmd_context &, param_descrs &d) override {
             d.insert("backend", CPK_SYMBOL, "certificate search: auto, scalar, f4 or native", "auto");
             d.insert("unique", CPK_BOOL, "record shared native affine uniqueness propagation", "true");
+            d.insert("branches", CPK_BOOL, "record and discharge shared native Boolean-domain branches", "true");
             d.insert("max_steps", CPK_UINT, "maximum polynomial operations", "2000000");
             d.insert("max_terms", CPK_UINT, "maximum terms per polynomial", "4096");
             d.insert("max_nodes", CPK_UINT, "maximum derivation DAG nodes", "100000");
@@ -249,7 +250,7 @@ namespace {
                     equations.push_back(arithmetic.add(std::move(lhs), rhs, rational(-1)));
                 }
                 ff::certificate proof;
-                if (!ff::certify(arithmetic, equations, proof, m_params.get_uint("max_nodes", 100000), backend, m_params.get_bool("unique", true))) {
+                if (!ff::certify(arithmetic, equations, proof, m_params.get_uint("max_nodes", 100000), backend, m_params.get_bool("unique", true), m_params.get_bool("branches", true))) {
                     ctx.regular_stream() << "(ff-certificate-unavailable no-polynomial-refutation)\n";
                     return;
                 }

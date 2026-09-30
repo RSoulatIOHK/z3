@@ -9,6 +9,55 @@ _original_run = suite.run
 def native_run(binary, text, options=''):
     return _original_run(binary, text, ':backend native ' + options)
 
+def branch_cases(binary):
+    checked = 0
+    rng = random.Random(20261001)
+    for p in [2, 7, 65537, 2**255-19, 2**521-1]:
+        equations = ['(= (ff.mul x x) x)',
+                     '(= (ff.mul x y) (as ff1 F))',
+                     '(= (ff.mul (ff.add (as ff1 F) (ff.neg x)) z) (as ff1 F))']
+        declarations = '\n'.join(f'(declare-const {v} F)' for v in ['x','y','z','w'])
+        for _ in range(4):
+            order = rng.sample(equations, len(equations))
+            text = suite.source(p, order, declarations=declarations)
+            proof = native_run(binary, text)
+            suite.check_both(text, proof); checked += 1
+            suite.rejected(suite.checker.verify, suite.source(p, order[:-1], declarations=declarations), proof)
+        # The bit-domain premise may be attached to a different class member.
+        alias = ['(= (ff.mul w w) w)', '(= w x)'] + equations[1:]
+        text = suite.source(p, alias, declarations=declarations)
+        suite.check_both(text, native_run(binary,text)); checked += 1
+        # Only one branch closes. Its local contradiction must not escape.
+        sat = suite.source(p, equations[:2], declarations=declarations)
+        assert '(ff-certificate\n' not in native_run(binary,sat), sat
+        if p > 3:
+            wrong_domain = suite.source(p, ['(= (ff.mul x x) (as ff1 F))']+equations[1:], declarations=declarations)
+            assert '(ff-certificate\n' not in native_run(binary,wrong_domain), wrong_domain
+            bits = [f'(= (ff.mul {v} {v}) {v})' for v in ['x','y','z']]
+            nested = suite.source(p, bits+['(= (ff.add x y z) (as ff4 F))'], declarations=declarations)
+            proof = native_run(binary,nested)
+            suite.check_both(nested,proof); checked += 1
+            # Branches must discharge under the actual modulus and premises.
+            suite.rejected(suite.checker.verify,nested.replace('(as ff4 F)','(as ff2 F)'),proof)
+        # A failed bounded attempt cannot poison the next proof context.
+        text = suite.source(p, equations, declarations=declarations)
+        transcript = _original_run(binary, text+'(ff-certify :backend native :max_nodes 4)\n', ':backend native')
+        assert transcript.startswith('(ff-certificate-unavailable budget)\n'), transcript
+        suite.check_both(text,transcript.split('\n',1)[1])
+        scoped = suite.source(p, equations[:2], declarations=declarations)
+        scoped += f'(push)\n(assert {equations[2]})\n(ff-certify :backend native)\n(pop)\n'
+        transcript = native_run(binary,scoped)
+        assert transcript.count('(ff-certificate\n') == 1 and transcript.endswith('(ff-certificate-unavailable no-polynomial-refutation)\n'), transcript
+    # A disconnected Boolean component can leave branching inconclusive even
+    # when the remaining nonlinear component has a unit ideal. Native basis
+    # fallback must retain the original scope and discard temporary assumptions.
+    declarations = '\n'.join(f'(declare-const {v} F)' for v in ['x','y']+[f'b{i}' for i in range(6)])
+    equations = [f'(= (ff.mul b{i} b{i}) b{i})' for i in range(6)] + [
+        '(= (ff.mul x x) (as ff1 F))', '(= (ff.mul x y) (as ff1 F))', '(= (ff.mul y y) (as ff2 F))']
+    text = suite.source(7,equations,declarations=declarations)
+    suite.check_both(text,native_run(binary,text))
+    print(f'{checked} discharged Boolean-branch proofs checked, including nested/aliased bits and SAT/budget controls')
+
 def uniqueness_cases(binary):
     rng = random.Random(20260930)
     checked = 0
@@ -88,6 +137,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--z3', required=True)
     args = parser.parse_args()
+    branch_cases(args.z3)
     uniqueness_cases(args.z3)
     count = 0
     for prime in [2, 7, 65537, 2**255 - 19, 2**521 - 1]:

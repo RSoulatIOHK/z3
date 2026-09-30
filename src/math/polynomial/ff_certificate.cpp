@@ -11,6 +11,7 @@ namespace ff {
         engine &e;
         certificate proof;
         unsigned max_nodes;
+        unsigned input_count = 0, zero_proof = ~0u;
         size_t bytes = 0;
         struct row { polynomial value; unsigned proof; };
         std::vector<row> basis;
@@ -49,6 +50,9 @@ namespace ff {
                 if (live[id]) continue;
                 live[id] = true;
                 auto const &n = proof.nodes[id];
+                // Local Boolean-branch hypotheses are internal placeholders.
+                // Successful export must have discharged every one of them.
+                if (n.kind == certificate::rule::input && n.left >= input_count) throw exhausted();
                 if (n.kind != certificate::rule::input) pending.push_back(n.left);
                 if (n.kind == certificate::rule::add) pending.push_back(n.right);
             }
@@ -193,17 +197,97 @@ namespace ff {
         void conflict(ff_unique::poly const &f) override {
             if (!contradiction(to_polynomial(f))) throw exhausted();
         }
-        bool unique(std::vector<polynomial> &input, unsigned variables) {
+        unsigned assume(unsigned variable, rational const &value) override {
+            // The state records the meaning v-value=0. This out-of-range input
+            // is never an exportable axiom; finish_native rejects any survivor.
+            (void)variable; (void)value;
+            return record({certificate::rule::input, ~0u, 0, rational(1), {}});
+        }
+        unsigned branch_result() const override { return proof.root; }
+        unsigned zero() {
+            if (zero_proof == ~0u) zero_proof = add(0, multiply(0, e.p-rational(1), {}));
+            return zero_proof;
+        }
+        // If a branch proves 1=A+B*h, remove its local assumption h while
+        // retaining A as a derivation from the enclosing scope's premises.
+        std::pair<unsigned, polynomial> discharge(unsigned root, unsigned hypothesis) {
+            unsigned count = proof.nodes.size();
+            std::vector<bool> live(count, false), affected(count, false);
+            std::vector<unsigned> pending{root}, rewritten(count, ~0u);
+            std::vector<polynomial> multipliers(count);
+            size_t storage = count * (sizeof(polynomial) + sizeof(unsigned) + 2);
+            while (!pending.empty()) {
+                e.tick();
+                unsigned id = pending.back(); pending.pop_back();
+                if (id >= count) throw exhausted();
+                if (live[id]) continue;
+                live[id] = true;
+                auto const &n = proof.nodes[id];
+                if (n.kind != certificate::rule::input) pending.push_back(n.left);
+                if (n.kind == certificate::rule::add) pending.push_back(n.right);
+            }
+            for (unsigned i = 0; i < count; ++i) {
+                e.tick();
+                if (!live[i]) continue;
+                auto n = proof.nodes[i]; // recording below can reallocate nodes
+                rewritten[i] = i;
+                if (i == hypothesis) {
+                    affected[i] = true;
+                    rewritten[i] = zero();
+                    multipliers[i] = e.constant(rational(1));
+                }
+                else if (n.kind == certificate::rule::multiply && affected[n.left]) {
+                    affected[i] = true;
+                    rewritten[i] = multiply(rewritten[n.left], n.coefficient, n.factor);
+                    polynomial factor;
+                    e.add_term(factor, n.factor, n.coefficient);
+                    multipliers[i] = e.mul(multipliers[n.left], factor);
+                }
+                else if (n.kind == certificate::rule::add && (affected[n.left] || affected[n.right])) {
+                    affected[i] = true;
+                    rewritten[i] = add(rewritten[n.left], rewritten[n.right]);
+                    multipliers[i] = e.add(multipliers[n.left], multipliers[n.right]);
+                }
+                for (auto const &[m, c] : multipliers[i]) {
+                    e.tick();
+                    storage += 3 * (sizeof(std::pair<monomial, rational>) + m.capacity() * sizeof(unsigned) +
+                                    2 * (e.p.get_num_bits()/8 + 1));
+                }
+                if (storage > 16 * 1024 * 1024) throw exhausted();
+            }
+            return {rewritten[root], std::move(multipliers[root])};
+        }
+        unsigned multiply_polynomial(unsigned id, polynomial const &factor) {
+            unsigned result = ~0u;
+            for (auto const &[m, c] : factor) {
+                e.tick();
+                unsigned term = multiply(id, c, m);
+                result = result == ~0u ? term : add(result, term);
+            }
+            return result == ~0u ? zero() : result;
+        }
+        void join_branches(unsigned variable, ff_unique::poly const &boolean,
+                           unsigned hypothesis0, unsigned root0, unsigned hypothesis1, unsigned root1) override {
+            auto [a0, b0] = discharge(root0, hypothesis0);
+            auto [a1, b1] = discharge(root1, hypothesis1);
+            // 1=A0+B0*x and 1=A1+B1*(x-1). With the proved q=x*(x-1),
+            // A0+B0*(x*A1+B1*q)=1. Every multiplier is expanded into existing
+            // PAC add/multiply steps; neither branch is a new trusted premise.
+            unsigned lifted = add(multiply(a1, rational(1), {variable}),
+                                  multiply_polynomial(boolean.derivation, b1));
+            proof.root = add(a0, multiply_polynomial(lifted, b0));
+        }
+        bool unique(std::vector<polynomial> &input, unsigned variables, bool branches) {
             std::vector<ff_unique::poly> equations, disequations;
             for (auto const &f : input) equations.push_back(to_unique(f));
             // Use the native tactic's propagation, with the same local stall
             // policy and shared cancellation/work allowance. The sink disables
-            // digit, coincident-output zero-test and branch inferences until they
+            // digit and coincident-output zero-test inferences until they
             // carry checked evidence.
             ff_unique::unique_budget budget(e.limit, std::min(1000000u, (e.max_work - e.steps()) / 4),
                 [&](uint64_t n) { for (uint64_t i = 0; i < n; ++i) e.tick(); });
             try {
-                ff_unique::unique_solver solver(e.p, budget, equations, disequations, 1, this);
+                ff_unique::unique_solver solver(e.p, budget, equations, disequations, 64, this);
                 ff_unique::unique_solver::state st;
                 st.parent.resize(variables);
                 st.members.resize(variables);
@@ -214,12 +298,37 @@ namespace ff {
                     st.parent[v] = v;
                     st.members[v] = {v};
                 }
+                for (auto const &f : equations) {
+                    unsigned v; rational c;
+                    if (ff_unique::boolean_polynomial(f, e.p, v, c)) st.is_bool[v] = true;
+                }
                 budget.start_propagation();
                 if (solver.propagate(st)) return true;
                 budget.stop_propagation();
                 std::vector<polynomial> residual;
                 for (auto const &f : equations) residual.push_back(to_polynomial(solver.canon(st, f)));
                 input = std::move(residual);
+                if (branches && std::find(st.is_bool.begin(), st.is_bool.end(), true) != st.is_bool.end()) {
+                    // Keep a bounded optional branch attempt from consuming the
+                    // entire proof store. Failure restores the proved root-scope
+                    // equations and DAG; all work/cancellation remains charged.
+                    unsigned saved_nodes = proof.nodes.size(), saved_root = proof.root, saved_zero = zero_proof;
+                    size_t saved_bytes = bytes;
+                    auto restore = [&]() {
+                        proof.nodes.resize(saved_nodes); proof.root = saved_root;
+                        zero_proof = saved_zero; bytes = saved_bytes;
+                    };
+                    try {
+                        flet<unsigned> bound(max_nodes, saved_nodes + std::min(10000u, (max_nodes-saved_nodes)/2));
+                        budget.progress(); budget.start_propagation();
+                        if (solver.split(st, 8)) return true;
+                    }
+                    catch (ff_unique::exhausted_budget const &) {}
+                    catch (exhausted const &) {
+                        if (e.steps() >= e.max_work || e.limit.is_canceled()) { restore(); throw; }
+                    }
+                    restore();
+                }
             }
             catch (ff_unique::exhausted_budget const &) {
                 // Local stall/exhaustion changes no input. Valid but unused proof
@@ -313,12 +422,13 @@ namespace ff {
             return f4_solve(e.p, equations, {}, variables, values, conflict, cfg, stats,
                             charge, nullptr, &out) == l_false;
         }
-        bool run(std::vector<polynomial> const &equations, certificate &out, bool linear_first = false, bool native = false, bool native_unique = true) {
+        bool run(std::vector<polynomial> const &equations, certificate &out, bool linear_first = false, bool native = false, bool native_unique = true, bool native_branches = true) {
             // Linear and sparse equations can eliminate variables before
             // nonlinear input rows create large intermediate polynomials.
             // This only changes search order: input nodes retain their original
             // equation indices, and the checker still replays every multiplier.
             if (native) {
+                input_count = equations.size();
                 auto input = equations;
                 unsigned variables = 0;
                 for (unsigned i = 0; i < input.size(); ++i) {
@@ -329,7 +439,7 @@ namespace ff {
                         variables = std::max(variables, v + 1);
                     }
                 }
-                if (native_unique && unique(input, variables)) {
+                if (native_unique && unique(input, variables, native_branches)) {
                     finish_native(out);
                     return true;
                 }
@@ -380,7 +490,7 @@ namespace ff {
         }
     };
     bool certify(engine &arithmetic, std::vector<polynomial> const &equations,
-                 certificate &output, unsigned max_nodes, certificate_backend backend, bool native_unique) {
+                 certificate &output, unsigned max_nodes, certificate_backend backend, bool native_unique, bool native_branches) {
         if (backend == certificate_backend::automatic) {
             bool scalar_exhausted = false;
             try {
@@ -399,7 +509,7 @@ namespace ff {
             return found;
         }
         if (backend == certificate_backend::native)
-            return certificate_builder(arithmetic, max_nodes).run(equations, output, true, true, native_unique);
+            return certificate_builder(arithmetic, max_nodes).run(equations, output, true, true, native_unique, native_branches);
         if (backend == certificate_backend::f4)
             return certificate_builder(arithmetic, max_nodes).run_f4(equations, output, ~0u);
         try {

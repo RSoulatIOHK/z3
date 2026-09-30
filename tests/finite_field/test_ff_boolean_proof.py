@@ -158,6 +158,19 @@ def main():
             equations = ['(= x y)', '(= z (ff.add (ff.mul x x x) (as ff1 F)))',
                          '(= w (ff.add (ff.mul y y y) (as ff1 F)))', '(not (= z w))']
             certify(source('\n'.join(f'(assert {e})' for e in equations), p, extra))
+        # Boolean-domain branch closure is exported using only ordinary PAC
+        # operations, so the unmodified Alethe/PAC checkers must accept it too.
+        if args.backend == 'native':
+            for p in [2, 7, LARGE]:
+                certify(source('(assert (= (ff.mul x x) x))\n'
+                               '(assert (= (ff.mul x y) (as ff1 F)))\n'
+                               '(assert (= (ff.mul (ff.add (as ff1 F) (ff.neg x)) z) (as ff1 F)))',
+                               p, '(declare-const z F)'))
+            certify(source('(assert (= (ff.mul x x) x))\n'
+                           '(assert (= (ff.mul y y) y))\n'
+                           '(assert (= (ff.mul z z) z))\n'
+                           '(assert (= (ff.add x y z) (as ff4 F)))',
+                           LARGE, '(declare-const z F)'))
         # Definitions/lets preserve lexical scope, including simultaneous binds.
         certify(source('(assert (and alias (not (let ((a b) (b a)) (= a b)))))',
                        extra='(define-fun alias () Bool (= a b))'))

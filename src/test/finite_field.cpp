@@ -20,6 +20,31 @@ namespace ff {
         static void native_uniqueness_certificates() {
             for (rational const &p : {rational(2), rational(7), rational("65537")}) {
                 reslimit limit;
+                engine e(p, limit, 2000000);
+                auto x = e.variable(0), y = e.variable(1), z = e.variable(2), one = e.constant(rational(1));
+                std::vector<polynomial> eqs{e.add(e.mul(x,x), x, rational(-1)),
+                    e.add(e.mul(x,y), one, rational(-1)),
+                    e.add(e.mul(e.add(one,x,rational(-1)),z),one,rational(-1))};
+                certificate proof;
+                ENSURE(certify(e, eqs, proof, 100000, certificate_backend::native));
+                ENSURE(e.m_eliminations == 0 && e.m_basis_calls == 0 && e.f4_calls == 0);
+                engine replay(p, limit, 10000000);
+                std::vector<polynomial> nodes;
+                for (auto const &n : proof.nodes) {
+                    // No local branch assumption may survive discharge/export.
+                    if (n.kind == certificate::rule::input) {
+                        ENSURE(n.left < eqs.size()); nodes.push_back(eqs.at(n.left));
+                    }
+                    else if (n.kind == certificate::rule::add) nodes.push_back(replay.add(nodes.at(n.left),nodes.at(n.right)));
+                    else {
+                        polynomial factor; replay.add_term(factor,n.factor,n.coefficient);
+                        nodes.push_back(replay.mul(nodes.at(n.left),factor));
+                    }
+                }
+                ENSURE(nodes.at(proof.root) == one);
+            }
+            for (rational const &p : {rational(2), rational(7), rational("65537")}) {
+                reslimit limit;
                 engine e(p, limit, 1000000);
                 auto one = e.constant(rational(1));
                 auto left = e.variable(0), right = e.variable(1);
