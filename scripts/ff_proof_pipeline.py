@@ -294,6 +294,78 @@ def run(argv, timeout, input_text=None):
     return result
 
 
+class NativeSession:
+    """One bounded, explicitly closed SMT command process (POSIX pipes).
+
+    Drain stdout/stderr while writing so large clauses cannot deadlock the
+    protocol. Every request shares the caller's absolute deadline. Solver output
+    is untrusted and is validated by the existing model/RUP replay layer.
+    """
+    def __init__(self, binary):
+        self.child = subprocess.Popen([str(binary), '-in'], stdin=subprocess.PIPE,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                      start_new_session=True, bufsize=0)
+        self.output = bytearray()
+        self.errors = bytearray()
+        self.closed = False
+        try:
+            for stream in [self.child.stdin, self.child.stdout, self.child.stderr]:
+                os.set_blocking(stream.fileno(), False)
+        except Exception:
+            self.close()
+            raise
+
+    def exchange(self, text, deadline):
+        import selectors
+        data = text.encode()
+        offset = 0
+        try:
+            fc.require(len(data) <= LIMIT, 'native session input limit')
+            fc.require(not self.closed, 'native session is closed')
+            with selectors.DefaultSelector() as ready:
+                ready.register(self.child.stdin, selectors.EVENT_WRITE, 'input')
+                ready.register(self.child.stdout, selectors.EVENT_READ, 'output')
+                ready.register(self.child.stderr, selectors.EVENT_READ, 'errors')
+                while True:
+                    remaining = deadline - time.monotonic()
+                    fc.require(remaining > 0, 'native session timeout')
+                    if offset == len(data) and b'\n' in self.output:
+                        line, _, rest = self.output.partition(b'\n')
+                        self.output = bytearray(rest)
+                        fc.require(not self.errors, 'native session stderr: ' + self.errors.decode(errors='replace')[:1000])
+                        return line.decode() + '\n'
+                    for key, _ in ready.select(min(.05, remaining)):
+                        if key.data == 'input':
+                            try: offset += os.write(key.fd, data[offset:offset+65536])
+                            except BlockingIOError: continue
+                            if offset == len(data): ready.unregister(key.fileobj)
+                        else:
+                            try: chunk = os.read(key.fd, 65536)
+                            except BlockingIOError: continue
+                            fc.require(chunk, 'native session closed before response')
+                            target = self.output if key.data == 'output' else self.errors
+                            target.extend(chunk)
+                            fc.require(len(target) <= LIMIT, 'native session output limit')
+        except Exception:
+            self.close()
+            raise
+
+    def close(self):
+        if self.closed: return
+        self.closed = True
+        if self.child.poll() is None:
+            try: os.killpg(self.child.pid, signal.SIGKILL)
+            except ProcessLookupError: pass
+            except PermissionError:
+                if self.child.poll() is None: self.child.kill()
+        self.child.wait()
+        for stream in [self.child.stdin, self.child.stdout, self.child.stderr]: stream.close()
+
+    def __del__(self):
+        try: self.close()
+        except Exception: pass
+
+
 def prepare_profile(original):
     """Keep the cheaper v1 path when applicable; use v2 for Boolean/deep input."""
     try:
@@ -313,7 +385,7 @@ def certificate_command(timeout, backend="auto"):
 
 def produce_bundle(original, directory, z3, timeout=10, prepared=None, backend="auto", boolean_backend="auto"):
     fc.require(backend in ("auto", "scalar", "f4", "native"), "invalid certificate backend")
-    fc.require(boolean_backend in ("auto", "native", "legacy"), "invalid Boolean backend")
+    fc.require(boolean_backend in ("auto", "native", "incremental", "legacy"), "invalid Boolean backend")
     profile, normalized = prepare_profile(original) if prepared is None else prepared
     directory = Path(directory)
     if profile == 'boolean':
@@ -362,7 +434,7 @@ def main():
     parser.add_argument('--ffpacheck', type=Path, required=True)
     parser.add_argument('--timeout', type=float, default=10, help='seconds per external stage')
     parser.add_argument('--backend', choices=['auto', 'scalar', 'f4', 'native'], default='auto', help='bounded polynomial certificate search')
-    parser.add_argument('--boolean-backend', choices=['auto', 'native', 'legacy'], default='auto', help='Boolean certificate search; auto follows the polynomial backend')
+    parser.add_argument('--boolean-backend', choices=['auto', 'native', 'incremental', 'legacy'], default='auto', help='Boolean certificate search; auto follows the polynomial backend')
     parser.add_argument('--check', action='store_true', help='recheck an existing bundle; never regenerate proof bytes')
     args = parser.parse_args()
     start = time.monotonic()

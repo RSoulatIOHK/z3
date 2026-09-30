@@ -286,3 +286,34 @@ assumptions. Unsupported auxiliary variables or non-replayable steps refuse
 production. Deletions may be ignored because retaining proved clauses preserves
 logical consequences. The final certificate still uses the unchanged independent
 Boolean/Alethe verifier and externally checked field lemmas.
+
+
+`--boolean-backend incremental` is an explicit experimental alternative to the
+one-shot `native` Boolean backend. It holds one native SAT process/solver across
+field lemmas, adding only newly bound clauses. The command
+`ff-boolean-certify :incremental true` retains the complete clause trace as well
+as native search state. Reuse requires an unchanged assertion prefix; removal,
+replacement, reset, exceptions, or an unknown result discard cached state.
+The existing model checks, independent RUP-to-resolution elaboration and final
+original-input/Alethe checks remain mandatory. No clause becomes trusted merely
+because it survived an earlier SAT check.
+
+The Python session transport currently uses POSIX nonblocking pipes with bounded
+input/output and a shared absolute deadline. It drains both output streams while
+writing, closes its process on errors, and is closed in the producer's `finally`
+block. This does not yet integrate field proof callbacks into `ff-sat` or the
+SMT equality engine. Field calls remain separately bounded commands. The default
+Boolean backend selection remains unchanged. The full-corpus measurement below
+justifies retaining this option, but does not close the remaining coverage gaps
+against published PR2 or the native proof integration gates.
+
+On the 390-input FMCAD corpus (10 seconds for production plus checking, four
+workers), persistent and one-shot native search both check 358 certificates with
+identical coverage. Persistence reduces geometric-mean wall time by 12.9% on
+those successes. It produces 360 bundles; two miss the checking deadline. The
+published PR2 binary checks 356 in the same harness: persistent native search
+has six gains and four losses, with a wall-time ratio of 1.008 on 352 common
+successes. These are single-run measurements, not a claim that every published
+success is preserved. All 34 acceptance checks pass, including independent
+proof replay, scope/reset recovery, process reuse, and bounded transport failure
+tests. See the native proof audit for the work still required.

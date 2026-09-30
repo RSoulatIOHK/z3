@@ -9,6 +9,7 @@
 #include "sat/sat_solver.h"
 #include "sat/sat_drat.h"
 #include <sstream>
+#include <memory>
 #include <unordered_map>
 
 namespace {
@@ -16,42 +17,75 @@ namespace {
     // these clauses to its input and field lemmas; this command trusts neither
     // their origin nor a solver result as a certificate of the original formula.
     class ff_boolean_certify_cmd : public parametric_cmd {
+        struct recorder : sat::clause_eh {
+            ast_manager &m;
+            std::vector<std::vector<int>> clauses;
+            size_t literals = 0;
+            recorder(ast_manager &m) : m(m) {}
+            void on_clause(unsigned n, sat::literal const *ls, sat::status st) override {
+                if (st.is_deleted()) return;
+                if (!m.inc() || clauses.size() >= 100000 || n > 1000000 - literals)
+                    throw default_exception("native Boolean proof budget");
+                literals += n;
+                auto &c = clauses.emplace_back();
+                for (unsigned i = 0; i < n; ++i)
+                    c.push_back((ls[i].sign() ? -1 : 1) * static_cast<int>(ls[i].var() + 1));
+            }
+        };
+        struct state {
+            // Destruction order matters: SAT callbacks must not outlive trace.
+            recorder trace;
+            params_ref params;
+            sat::solver solver;
+            expr_ref_vector assertions, names;
+            std::unordered_map<expr*, sat::literal> literals;
+            std::vector<unsigned> exported;
+            state(ast_manager &m, bool incremental) : trace(m), solver(params, m.limit()), assertions(m), names(m),
+                                    exported(solver.num_vars(), ~0u) {
+                solver.set_incremental(incremental);
+                solver.set_drat(true);
+                solver.get_drat().set_clause_eh(trace);
+            }
+        };
+        std::unique_ptr<state> m_state;
     public:
         ff_boolean_certify_cmd() : parametric_cmd("ff-boolean-certify") {}
+        void reset(cmd_context &) override { m_state.reset(); }
+        void finalize(cmd_context &) override { m_state.reset(); }
         char const *get_usage() const override { return "(<keyword> <value>)*"; }
         char const *get_main_descr() const override { return "solve Boolean CNF and record native SAT clause evidence"; }
         void init_pdescrs(cmd_context &, param_descrs &d) override {
             d.insert("timeout", CPK_UINT, "native Boolean proof timeout in milliseconds", "10000");
+            d.insert("incremental", CPK_BOOL, "retain native SAT and proof state across monotone assertion additions", "false");
         }
         void execute(cmd_context &ctx) override {
             auto &m = ctx.m();
             cancel_eh<reslimit> cancel(m.limit());
             scoped_ctrl_c interrupt(cancel);
             scoped_timer timer(m_params.get_uint("timeout", 10000), &cancel);
-            struct recorder : sat::clause_eh {
-                ast_manager &m;
-                std::vector<std::vector<int>> clauses;
-                size_t literals = 0;
-                recorder(ast_manager &m) : m(m) {}
-                void on_clause(unsigned n, sat::literal const *ls, sat::status st) override {
-                    if (st.is_deleted()) return;
-                    if (!m.inc() || clauses.size() >= 100000 || n > 1000000 - literals)
-                        throw default_exception("native Boolean proof budget");
-                    literals += n;
-                    auto &c = clauses.emplace_back();
-                    for (unsigned i = 0; i < n; ++i)
-                        c.push_back((ls[i].sign() ? -1 : 1) * static_cast<int>(ls[i].var() + 1));
-                }
-            } trace(m);
-            // The recorder outlives the solver and its proof callbacks.
-            params_ref p;
-            sat::solver solver(p, m.limit());
-            solver.set_drat(true);
-            solver.get_drat().set_clause_eh(trace);
-            std::unordered_map<expr*, sat::literal> literals;
-            ptr_vector<expr> names;
-            std::vector<unsigned> exported(solver.num_vars(), ~0u);
-            for (expr *assertion : ctx.assertions()) {
+            bool incremental = m_params.get_bool("incremental", false);
+            try { run(ctx, incremental); }
+            catch (...) { m_state.reset(); throw; }
+            if (!incremental) m_state.reset();
+        }
+        void run(cmd_context &ctx, bool incremental) {
+            auto &m = ctx.m();
+            auto const &current = ctx.assertions();
+            // Learned clauses remain justified only when every old assertion is
+            // still active. Pop/replacement/reset rebuilds both search and trace;
+            // a dependency list alone never authorizes reusing a stale lemma.
+            bool reuse = incremental && m_state && current.size() >= m_state->assertions.size();
+            if (reuse) for (unsigned i = 0; i < m_state->assertions.size(); ++i)
+                if (current[i] != m_state->assertions[i]) { reuse = false; break; }
+            if (!reuse) m_state = std::make_unique<state>(m, incremental);
+            auto &s = *m_state;
+            auto &solver = s.solver;
+            auto &literals = s.literals;
+            auto &names = s.names;
+            auto &exported = s.exported;
+            solver.pop_to_base_level();
+            for (unsigned i = s.assertions.size(); i < current.size(); ++i) {
+                expr *assertion = current[i];
                 sat::literal_vector clause;
                 ptr_vector<expr> terms;
                 if (m.is_or(assertion)) for (expr *arg : *to_app(assertion)) terms.push_back(arg);
@@ -74,6 +108,7 @@ namespace {
                     clause.push_back(neg ? ~it->second : it->second);
                 }
                 solver.mk_clause(clause);
+                s.assertions.push_back(assertion);
             }
             auto result = solver.check();
             std::ostringstream out;
@@ -86,7 +121,10 @@ namespace {
                 for (auto *name : names) out << (model[literals.at(name).var()] == l_true ? "true " : "false ");
             }
             out << ") :clauses (";
-            if (result == l_false) for (auto const &clause : trace.clauses) {
+            // The complete retained trace includes learned clauses from earlier
+            // SAT checks. The receiver replays these against its bound premises;
+            // input-labelled clauses are never new trusted assumptions.
+            if (result == l_false) for (auto const &clause : s.trace.clauses) {
                 out << '(';
                 for (int lit : clause) {
                     unsigned v = static_cast<unsigned>(lit < 0 ? -lit : lit) - 1;
@@ -98,6 +136,8 @@ namespace {
             }
             out << "))\n";
             ctx.regular_stream() << out.str();
+            ctx.regular_stream().flush();
+            if (result == l_undef) m_state.reset();
         }
     };
 

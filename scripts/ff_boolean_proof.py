@@ -358,11 +358,10 @@ class NativeSearch(Search):
                     changed = True
             require(changed, 'native SAT step is not supported by RUP replay')
 
-    def search(self):
+    def query(self, variables):
         import ff_proof_pipeline as pp
         remaining = self.deadline - time.monotonic()
         require(remaining > 0, 'Boolean pipeline timeout')
-        variables = sorted({abs(x) for i in self.active for x in self.clauses[i]})
         names = {f'b{i}': i for i in variables}
         text = '(set-logic QF_UF)\n' + ''.join(f'(declare-const {name} Bool)\n' for name in names)
         for index in self.active:
@@ -372,7 +371,15 @@ class NativeSearch(Search):
             text += f'(assert {body})\n'
         text += f'(ff-boolean-certify :timeout {max(1, int(remaining * 900))})\n'
         require(len(text) < 32 * 1024 * 1024, 'native Boolean input size limit')
-        output = pp.run([str(self.z3), '-in'], remaining, text)['stdout']
+        return pp.run([str(self.z3), '-in'], remaining, text)['stdout']
+
+    def close(self):
+        pass
+
+    def search(self):
+        variables = sorted({abs(x) for i in self.active for x in self.clauses[i]})
+        names = {f'b{i}': i for i in variables}
+        output = self.query(variables)
         objects = fc.parse(output)
         require(len(objects) == 1 and isinstance(objects[0], list), 'invalid native SAT response')
         obj = objects[0]
@@ -420,6 +427,45 @@ class NativeSearch(Search):
         # Some native UNSAT paths finish with a unit conflict rather than a
         # separately emitted empty clause. It must still replay by propagation.
         return False, self.rup(())
+
+
+class IncrementalSearch(NativeSearch):
+    """Retain the actual native SAT state between checked field lemmas."""
+    def __init__(self, clauses, z3, deadline):
+        super().__init__(clauses, z3, deadline)
+        self.session = None
+        self.sent = set()
+        self.declared = set()
+
+    def query(self, variables):
+        import ff_proof_pipeline as pp
+        remaining = self.deadline - time.monotonic()
+        require(remaining > 0, 'Boolean pipeline timeout')
+        require(self.sent <= self.active_set, 'non-monotone native Boolean session')
+        text = ''
+        if self.session is None:
+            self.session = pp.NativeSession(self.z3)
+            text = '(set-logic QF_UF)\n'
+        for v in variables:
+            if v not in self.declared:
+                text += f'(declare-const b{v} Bool)\n'
+                self.declared.add(v)
+        for index in self.active:
+            if index in self.sent: continue
+            c = self.clauses[index]
+            terms = [f'b{x}' if x > 0 else f'(not b{-x})' for x in c]
+            body = 'false' if not terms else terms[0] if len(terms) == 1 else '(or ' + ' '.join(terms) + ')'
+            text += f'(assert {body})\n'
+            self.sent.add(index)
+        text += f'(ff-boolean-certify :incremental true :timeout {max(1, int(remaining * 900))})\n'
+        return self.session.exchange(text, self.deadline)
+
+    def close(self):
+        if self.session is not None: self.session.close()
+
+    def __del__(self):
+        try: self.close()
+        except Exception: pass
 
 
 class Case:
@@ -545,11 +591,20 @@ def compact(g, literals, dag):
 
 def produce(original, z3, timeout, backend="auto", boolean_backend="auto"):
     require(backend in ("auto", "scalar", "f4", "native"), "invalid certificate backend")
-    require(boolean_backend in ("auto", "native", "legacy"), "invalid Boolean backend")
+    require(boolean_backend in ("auto", "native", "incremental", "legacy"), "invalid Boolean backend")
     import ff_proof_pipeline as pp
     start = time.monotonic(); g = Graph(original); base = Clauses(g)
     native = boolean_backend == "native" or (boolean_backend == "auto" and backend == "native")
-    search = NativeSearch(base.clauses, z3, start + timeout) if native else Search(base.clauses)
+    search = (IncrementalSearch(base.clauses, z3, start + timeout) if boolean_backend == "incremental" else
+              NativeSearch(base.clauses, z3, start + timeout) if native else Search(base.clauses))
+    try:
+        return produce_search(g, base, search, z3, start, timeout, backend)
+    finally:
+        if isinstance(search, NativeSearch): search.close()
+
+
+def produce_search(g, base, search, z3, start, timeout, backend):
+    import ff_proof_pipeline as pp
     lemmas = 0
     while True:
         require(time.monotonic() - start < timeout, 'Boolean pipeline timeout')

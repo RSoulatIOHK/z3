@@ -32,7 +32,7 @@ as holes. Lean checking is not implemented by this work.
 | Bit reasoning (`propagate_bits`, `small_bits`) | Boolean premises, no-wrap bounds and exhaustive assignment coverage must be recorded |
 | Finite-field roots and completion | Frobenius axioms, quotient/minimal-polynomial derivations, root completeness and branch closure need proof rules |
 | Tiny-field search (`ff_tiny.cpp`) | Domain pruning and exhaustive closure need local explanations |
-| Boolean combination | Opt-in pipeline now uses native SAT evidence, independently elaborated into resolution; integration with `ff_sat_tactic.cpp` and its field-lemma callbacks remains |
+| Boolean combination | Opt-in pipeline now uses native SAT evidence, independently elaborated into resolution; explicit `incremental` mode retains SAT state/trace across monotone field-lemma additions; integration with `ff_sat_tactic.cpp` and its field-lemma callbacks remains |
 | SMT combination (`theory_ff.cpp`) | Explanations must connect field lemmas to equality-engine/SAT premises with scope-safe evidence |
 | BV fallback (`ff2bv_tactic.cpp`, theory fallback) | Check encoding equivalence, bit-vector/SAT refutation and premise connection, or explicitly refuse certificate production |
 
@@ -81,6 +81,24 @@ before elimination/F4/basis search. The complete acceptance suite remains
 required after every implementation change.
 
 ## Current measured acceptance
+
+The subsequent persistent-SAT milestone passes all 34 acceptance checks. Its
+full-corpus run checks 358/390 certificates in both one-shot and persistent
+native modes, with exactly the same successful inputs. Persistent search is
+12.9% faster by geometric mean on those 358 successes. It produces 360 bundles;
+two do not finish checking before the shared 10-second deadline. Published PR2
+checks 356 in the same run and harness. Against that baseline, persistence has
+six gains and four losses, with a wall-time ratio of 1.008 on 352 common checked
+inputs. This improves native proof throughput but is not a coverage-preserving
+replacement for published PR2. It remains an explicit experimental option.
+
+A diagnostic propagated polynomial multipliers backward through 108 existing
+field-lemma proofs from a slow soundness instance. Exact algebraic cancellation
+removed no premises. That measured case does not justify adding a multiplier
+compression pass as the next performance change. Field-conflict selection and
+the unsupported native inference paths remain open work.
+
+For historical comparison (different run, before persistent SAT):
 
 The shared-uniqueness milestone passes all 33 acceptance checks, plus the two
 updated external Boolean suites (34 checked bundles each). On the complete
