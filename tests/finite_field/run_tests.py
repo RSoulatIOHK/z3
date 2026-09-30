@@ -23,9 +23,9 @@ CORE = [
     'test_zk.py',
 ]
 PROOFS = ['test_ff_certificates.py', 'test_ff_native_certificates.py', 'test_ff_f4_certificates.py',
-          'test_ff_proof_pipeline.py', 'test_ff_boolean_proof.py', 'test_ff_native_boolean_proof.py', 'test_ff_incremental_boolean_proof.py', 'test_ff_integrated_boolean_proof.py', 'test_ff_range_proof.py']
+          'test_ff_proof_pipeline.py', 'test_ff_boolean_proof.py', 'test_ff_native_boolean_proof.py', 'test_ff_incremental_boolean_proof.py', 'test_ff_integrated_boolean_proof.py', 'test_ff_range_proof.py', 'test_ff_circuit_proof.py']
 CLI = {'test_qfff.py', 'test_ff_backend_recovery.py', 'test_ff_integration.py'}
-EXTERNAL = {'test_ff_proof_pipeline.py', 'test_ff_boolean_proof.py', 'test_ff_native_boolean_proof.py', 'test_ff_incremental_boolean_proof.py', 'test_ff_integrated_boolean_proof.py', 'test_ff_range_proof.py'}
+EXTERNAL = {'test_ff_proof_pipeline.py', 'test_ff_boolean_proof.py', 'test_ff_native_boolean_proof.py', 'test_ff_incremental_boolean_proof.py', 'test_ff_integrated_boolean_proof.py', 'test_ff_range_proof.py', 'test_ff_circuit_proof.py'}
 NATIVE = ['finite_field', 'ast', 'smt_context', 'smt2print_parse', 'api', 'arith_rewriter']
 
 

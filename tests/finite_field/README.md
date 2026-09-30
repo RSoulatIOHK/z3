@@ -76,6 +76,20 @@ from the original input, while existing version-2 bundles remain supported.
 small-field wraparound SAT counterexamples, conditional constraints, and proof
 corruptions through the independent binding checker, FFPacheck and Carcara.
 
+The optional `--boolean-backend circuits` mode extends `ranges` with bounded
+recognition of mux (`b + s*(a-b)`), XOR (`a+b-2*a*b`) and product identities.
+It expands at most a small local wire cone, keeps every defining equality as a
+premise, and propagates the proved bit facts into downstream gates and sums.
+Each local truth table has at most three inputs and is certified with existing
+PAC rules. Matching uses memoization for shared arithmetic DAGs and declines
+unsupported expressions; it does not enumerate complete circuit assignments.
+Schema version 4 binds the extra definitions and lemmas to the original input;
+versions 2 and 3 retain their existing reconstruction. The new regression suite
+covers split wires, signed intermediates, reordered sums, small and large fields,
+a satisfying near-match that invalidates the mux identity, and shared DAGs.
+The native solver, resource budgets, automatic backend policy and external
+checker requirements are unchanged.
+
 Every invocation requires a new output directory and writes per-suite logs plus
 `summary.json`, including commands, statuses, timings and the selected build.
 Failures, missing prerequisites and timeouts return a nonzero exit code.

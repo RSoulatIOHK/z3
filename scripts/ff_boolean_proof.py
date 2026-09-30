@@ -31,7 +31,7 @@ def clause(lits):
 
 
 class Graph:
-    def __init__(self, text, ranges=False):
+    def __init__(self, text, ranges=False, compounds=False):
         self.nodes = [None]  # Positive node IDs are also Boolean atom IDs.
         self.intern, self.names, self.sorts, self.assertions = {}, {}, {}, []
         self.literal_ids = {}
@@ -91,7 +91,7 @@ class Graph:
         self.range_seeds = []
         if ranges:
             import ff_range_proof
-            ff_range_proof.augment(self)
+            ff_range_proof.augment(self, compounds=compounds)
         self.boolean_nodes = len(self.nodes)
 
     def tick(self):
@@ -746,13 +746,13 @@ def compact(g, literals, dag):
 
 def produce(original, z3, timeout, backend="auto", boolean_backend="auto", field_session=None):
     require(backend in ("auto", "scalar", "f4", "native"), "invalid certificate backend")
-    require(boolean_backend in ("auto", "native", "incremental", "integrated", "ranges", "legacy"), "invalid Boolean backend")
+    require(boolean_backend in ("auto", "native", "incremental", "integrated", "ranges", "circuits", "legacy"), "invalid Boolean backend")
     import ff_proof_pipeline as pp
-    start = time.monotonic(); g = Graph(original, ranges=boolean_backend == "ranges"); base = Clauses(g)
-    if boolean_backend == "ranges":
+    start = time.monotonic(); g = Graph(original, ranges=boolean_backend in ("ranges", "circuits"), compounds=boolean_backend == "circuits"); base = Clauses(g)
+    if boolean_backend in ("ranges", "circuits"):
         require(backend == "native", "range search requires native polynomial certificates")
         import ff_range_proof
-        return ff_range_proof.produce(g, base, z3, start, timeout)
+        return ff_range_proof.produce(g, base, z3, start, timeout, version=4 if boolean_backend == "circuits" else 3)
     if boolean_backend == "integrated":
         require(backend == "native", 'integrated search requires native polynomial certificates')
         return produce_integrated(g, base, z3, start, timeout)
@@ -975,9 +975,9 @@ class Writer:
 
 
 def verify_export(original, proof):
-    require(isinstance(proof, dict) and set(proof) == {'version', 'records', 'root'} and type(proof['version']) is int and proof['version'] in (2, 3), 'unknown Boolean certificate schema')
+    require(isinstance(proof, dict) and set(proof) == {'version', 'records', 'root'} and type(proof['version']) is int and proof['version'] in (2, 3, 4), 'unknown Boolean certificate schema')
     require(isinstance(proof['records'], list) and len(proof['records']) <= MAX_RECORDS, 'record limit')
-    g = Graph(original, ranges=proof['version'] == 3); base = Clauses(g); clauses = list(base.clauses); writer = Writer(g); writer.base(base)
+    g = Graph(original, ranges=proof['version'] in (3,4), compounds=proof['version'] == 4); base = Clauses(g); clauses = list(base.clauses); writer = Writer(g); writer.base(base)
     files, count = {}, 0
     for record in proof['records']:
         require(isinstance(record, dict), 'malformed record')

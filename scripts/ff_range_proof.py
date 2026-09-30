@@ -13,7 +13,7 @@ MAX_SEEDS = 512
 MAX_SUM = 16
 
 
-def augment(g):
+def augment(g, compounds=False):
     if not g.ites or g.source_nodes > 5000:
         return
     zero = g.node('num', data=(0, g.p))
@@ -118,6 +118,21 @@ def augment(g):
                 for k in (0,1):
                     seed(atom,eq(v,num(k)),-eq(x,num(k)))
                     seed(atom,eq(x,num(k)),-eq(v,num(k)))
+        if compounds:
+            import ff_circuit_proof
+            for x in range(1,g.source_nodes):
+                op,args,_=g.nodes[x]
+                if x in bits or op!='ff.add' or len(args)>4: continue
+                matched=ff_circuit_proof.regroup(g,x,bits,equalities,g.node,num,eq,domain,seed)
+                if matched is None or len(matched[0])!=1 or x in bits: continue
+                (value,),premises=matched
+                bits[x]=domain(x,1)
+                # The regrouped term is a bit only under the original wire
+                # equations. Preserve those premises in each domain/value lemma.
+                seed(*premises,bits[value],-bits[x])
+                for v in (0,1):
+                    seed(*premises,eq(value,num(v)),-eq(x,num(v)))
+                    seed(*premises,eq(x,num(v)),-eq(value,num(v)))
         if len(bits) == before: break
 
     # A cut is a conservative definition, not a fresh unconstrained assertion.
@@ -148,6 +163,18 @@ def augment(g):
         if s in sums: continue
         # Rewrite k-sum(negative bits) as sum(1-bit) only when the
         # constants agree modulo p. The bridge to the original sum is proved.
+        if compounds:
+            import ff_circuit_proof
+            matched = ff_circuit_proof.regroup(g,s,bits,equalities,g.node,num,eq,domain,seed)
+            if matched is not None:
+                leaves,premises = matched
+                if 2 <= len(leaves) <= MAX_SUM:
+                    root,k,r,definitions = tree(leaves); sums[s]=root
+                    link=eq(root,s)
+                    seed(*premises,*definitions,-link)
+                    seed(link,eq(root,zero),-eq(s,zero))
+                    seed(link,eq(s,zero),-eq(root,zero))
+                    continue
         leaves, negatives, constant = [], [], 0
         for term in g.nodes[s][1]:
             op,args,data = g.nodes[term]
@@ -180,7 +207,7 @@ def augment(g):
         continue
 
 
-def produce(g, base, z3, start, timeout):
+def produce(g, base, z3, start, timeout, version=3):
     import ff_boolean_proof as bp
     import ff_proof_pipeline as pp
     # Without a bounded sum, the original CNF is unchanged. New field atoms
@@ -207,5 +234,5 @@ def produce(g, base, z3, start, timeout):
     search = SimpleNamespace(records=records,clauses=list(base.clauses)+[None]*len(records))
     search.clauses[proof['root']] = ()
     result = bp.finish_proof(base,search,proof['root'])
-    result['version']=3
+    result['version']=version
     return result
