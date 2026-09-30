@@ -276,6 +276,94 @@ def decode_polynomial(raw, ar, count):
     return out
 
 
+def balance_certificate(text):
+    """Untrusted producer optimization; the returned DAG still requires verify().
+
+    Flatten only single-use add/multiply chains and balance their sums. Shared
+    nodes remain anchors, avoiding exponential expansion of global multipliers.
+    This changes only ring identities, never the input equations or checker.
+    """
+    objects = parse(text)
+    require(len(objects) == 1 and isinstance(objects[0], list) and objects[0] and objects[0][0] == 'ff-certificate', 'expected certificate')
+    c = attributes(objects[0][1:], {':version', ':modulus', ':variables', ':inputs', ':nodes', ':root'})
+    require(c[':version'] == '1', 'unsupported certificate version')
+    p = natural(c[':modulus']); require(2 <= p and p.bit_length() <= 4096, 'modulus out of range')
+    require(isinstance(c[':variables'], list) and isinstance(c[':inputs'], list), 'invalid certificate inputs')
+    nodes = c[':nodes']; require(isinstance(nodes, list) and 0 < len(nodes) <= 100000, 'node limit')
+    root = natural(c[':root']); require(root < len(nodes), 'bad root')
+    parents, factors = [], {}
+    for i, n in enumerate(nodes):
+        require(isinstance(n, list) and n, 'malformed node')
+        if n[0] == 'input':
+            require(len(n) == 2 and natural(n[1]) < len(c[':inputs']), 'bad input reference'); ps = []
+        elif n[0] == 'add':
+            require(len(n) == 3, 'bad addition'); ps = [natural(n[1]), natural(n[2])]
+        elif n[0] == 'mul':
+            require(len(n) == 4 and isinstance(n[3], list), 'bad multiplication')
+            ps = [natural(n[1])]; coefficient = natural(n[2]); mon = tuple(map(natural, n[3]))
+            require(0 < coefficient < p and len(mon) <= 1024 and tuple(sorted(mon)) == mon and
+                    all(v < len(c[':variables']) for v in mon), 'noncanonical multiplier')
+            factors[i] = coefficient, mon
+        else: raise Invalid('unknown derivation rule')
+        require(all(j < i for j in ps), 'bad derivation reference'); parents.append(ps)
+    live, pending, uses = set(), [root], [0]*len(nodes)
+    while pending:
+        i = pending.pop()
+        if i in live: continue
+        live.add(i)
+        for j in parents[i]: uses[j] += 1; pending.append(j)
+    anchors = {i for i in live if uses[i] > 1 or nodes[i][0] == 'input'} | {root}
+    renamed, result = {}, []
+    work = 0
+    def emit(n):
+        require(len(result) < 100000, 'balanced DAG node limit')
+        result.append(n); return len(result)-1
+    for i in sorted(anchors):
+        if nodes[i][0] == 'input': renamed[i] = emit(nodes[i]); continue
+        terms, pending = {}, [(i, 1, ())]
+        while pending:
+            j, coefficient, mon = pending.pop()
+            work += 1 + len(mon); require(work <= 2000000, 'balance work limit')
+            if j != i and j in anchors:
+                key = renamed[j], mon
+                terms[key] = (terms.get(key, 0) + coefficient) % p
+            elif nodes[j][0] == 'add':
+                pending.extend((k, coefficient, mon) for k in parents[j])
+            else:
+                scale, factor = factors[j]
+                require(len(mon)+len(factor) <= 1024, 'balance degree limit')
+                pending.append((parents[j][0], coefficient*scale % p, tuple(sorted(mon+factor))))
+        terms = {k: v for k, v in terms.items() if v}
+        summands = []
+        for (j, mon), coefficient in sorted(terms.items()):
+            summands.append(j if coefficient == 1 and not mon else
+                            emit(['mul', str(j), str(coefficient), list(map(str, mon))]))
+        if not summands:
+            # Produce zero from an existing input, never a new constant axiom.
+            j = next(iter(renamed.values())); negative = emit(['mul', str(j), str(p-1), []])
+            summands = [emit(['add', str(j), str(negative)])]
+        while len(summands) > 1:
+            level = []
+            for k in range(0, len(summands), 2):
+                level.append(summands[k] if k+1 == len(summands) else
+                             emit(['add', str(summands[k]), str(summands[k+1])]))
+            summands = level
+        renamed[i] = summands[0]
+    # Do not enlarge an already compact derivation merely to change its shape.
+    if len(result) > len(nodes): return text
+    c[':nodes'], c[':root'] = result, str(renamed[root])
+    out = sexpr(['ff-certificate'] + [x for kv in c.items() for x in kv]) + '\n'
+    require(len(out.encode()) <= 32*1024*1024, 'balanced certificate size limit')
+    return out
+
+
+def try_balance_certificate(text):
+    # Local normalization limits do not invalidate an existing recorded proof.
+    # The original or transformed DAG is always checked before it is accepted.
+    try: return balance_certificate(text)
+    except Invalid: return text
+
+
 def verify(problem_text, certificate_text):
     return verify_problem(Problem(problem_text), certificate_text)
 

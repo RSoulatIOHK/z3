@@ -323,14 +323,18 @@ frames multiline responses under the same bounded transport; it is not proof
 evidence. Tests alternate fields, symbol declarations, SAT/UNSAT requests and
 scope changes, and independently reject certificates bound to the wrong input.
 
-The revised configuration checks 365/390 FMCAD inputs versus 358 for the previous
-native pipeline, with seven gains, no losses and a geometric-mean time ratio of
-0.842. Disabling only branch recording checks 364 with no extra successes and a
-ratio of 1.010 for branches enabled/disabled on the 364 common successes. All runs
-use a shared 10-second production/checking deadline and four workers. There are
-still 25 unchecked inputs; see the native audit for the complete comparison and
-the remaining integration gates. All 34 acceptance checks pass, including
-external checking of branch proofs, scope recovery and input binding.
+The current native pipeline checks 366/390 FMCAD inputs and produces 368
+bundles. A full-corpus comparison of bounded producer-side DAG balancing checks
+366 versus 365 without it: one gain, no losses, and a geometric-mean wall-time
+ratio of 1.015 on the 365 common successes. Balancing preserves shared nodes
+and changes only the arithmetic DAG; every output still passes the unchanged
+input-bound verifier and external checkers. It introduces no trusted rule.
+The earlier branch/session comparison improved 358 to 365 with no losses and a
+ratio of 0.842; these are separate timing experiments. All runs use a shared
+10-second production/checking deadline and four workers. There are still 24
+unchecked inputs (seven field-proof budget failures and 17 timeouts); see the
+native audit for remaining integration gates. All 34 acceptance checks pass
+for branch/session recording, and all eight proof checks pass after balancing.
 
 In the preceding persistent-SAT milestone, on the 390-input FMCAD corpus
 (10 seconds for production plus checking, four

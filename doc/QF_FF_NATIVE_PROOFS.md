@@ -115,29 +115,43 @@ fixtures close before native elimination or basis computation.
 
 ## Current measured acceptance
 
-With scoped field sessions, larger bounded native work/lemma allowances and
-Boolean-branch recording, the full run checks **365/390** certificates versus
-358 for the preceding native pipeline. There are seven gains and no losses;
-the geometric-mean time ratio is 0.842 on all 358 common successes. Disabling
-only branch recording checks 364: enabling it adds one checked result, loses
-none, and has a time ratio of 1.010 on 364 common successes. This meets the
-coverage/performance criterion for retaining the branch attempt.
+The current native pipeline checks **366/390** FMCAD inputs within the shared
+10-second production/checking deadline, with four workers. A controlled
+780-run comparison of producer-side DAG balancing against the preceding native
+pipeline checks 366 versus 365: one gain, no losses, and a geometric-mean
+wall-time ratio of 1.015 on 365 common successes. This is a single-run timing
+measurement. Balancing is retained under the coverage/performance criterion.
 
-The revised path produces 367 bundles; two miss the checking deadline. Its 25
-unchecked inputs comprise eight unavailable results and 17 timeouts. Published
-PR2 checks 356 in the same run: the revised path has ten gains and one loss,
-and a time ratio of 0.840 on 355 common successes. This remains incomplete and
-does not justify claiming full reconstruction or coverage-preserving replacement
-of published PR2. Each configuration ran all 390 distinct inputs under a shared
-10-second whole-pipeline limit with four workers. Timings are from a single run.
+The producer flattens only single-use arithmetic chains, preserves shared DAG
+nodes, and balances addition trees. This reduces retained intermediate terms
+without globally expanding polynomial multipliers. It is bounded and untrusted:
+both unchanged and transformed certificates must pass the existing independent
+input-bound verifier and external Alethe/PAC checks. No checker limit or rule
+was changed. Tests include a valid proof exceeding the original retained-term
+limit, malformed DAGs, changed premises, and raw/balanced native proofs.
 
-All 34 acceptance checks pass. The eight proof acceptance checks also pass
-after promoting the measured selection: on POSIX, `--backend native` now uses
-incremental SAT and scoped field sessions by default. Explicit `native` Boolean
-search and `--no-field-session` retain one-shot alternatives; default `auto`
-reconstruction is unchanged. Frozen inputs, binaries, scripts, all receipts and
-figures are retained in the separate `qf-ff-proof-branches-20260930` research
-archive. No cvc5 comparison was rerun for this milestone.
+The pipeline produces 368 bundles; two miss the checking deadline. The 24
+unchecked inputs comprise seven native field-proof budget failures and 17
+timeouts. Full reconstruction remains unfinished. The current success set
+contains every success from the earlier 356-result published-PR2 comparison,
+but this does not certify all ordinary solver paths or establish Lean checking.
+
+The preceding 1,560-run comparison measured scoped field sessions, larger bounded
+native work/lemma allowances and Boolean-branch recording: 365 checked versus
+358 for the previous native pipeline, seven gains and no losses, with a time
+ratio of 0.842. Disabling only branch recording checked 364; enabling it added
+one result with a ratio of 1.010. Balancing recovers the single published-PR2
+success lost in that preceding comparison. These are separate controlled runs;
+their timing ratios must not be combined into a new measured speedup.
+
+All 34 acceptance checks pass for the native branch/session implementation;
+all eight proof acceptance checks pass again after balancing. On POSIX,
+`--backend native` uses incremental SAT and scoped field sessions by default.
+Explicit `native` Boolean search and `--no-field-session` retain one-shot
+alternatives; default `auto` reconstruction is unchanged. Frozen inputs,
+binaries, scripts, receipts and figures are retained in the separate
+`qf-ff-proof-branches-20260930` and `qf-ff-proof-balancing-20260930` research
+archives. No cvc5 comparison was rerun for these milestones.
 
 Earlier measurements:
 

@@ -642,6 +642,7 @@ def produce_search(g, base, search, z3, start, timeout, backend, field=None):
         output = (field.query(case.normalized(), start + timeout, backend) if field is not None else
                   pp.run([str(z3), '-in'], remaining, case.normalized() + pp.certificate_command(remaining, backend))['stdout'])
         require(output.startswith('(ff-certificate\n'), 'field certificate unavailable: ' + output[:300].strip())
+        if backend == 'native': output = fc.try_balance_certificate(output)
         core, dag = compact(g, literals, output)
         search.append(clause(-x for x in core), dict(rule='field', literals=core, certificate=dag))
         lemmas += 1

@@ -429,6 +429,7 @@ def produce_bundle(original, directory, z3, timeout=10, prepared=None, backend="
     result = run([str(z3), '-in'], timeout, cmd)
     dag = result['stdout']
     fc.require(dag.lstrip().startswith('(ff-certificate\n'), 'no certificate: ' + dag[:1000])
+    if backend == 'native': dag = fc.try_balance_certificate(dag)
     normalized, alethe, pac = export_artifact(original, dag)
     for name, data in [('certificate.ffcert', dag), ('polynomial-input.smt2', normalized),
                        ('proof.alethe', alethe), ('proof.pac', pac)]:

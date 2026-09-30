@@ -2,9 +2,41 @@
 import argparse
 import subprocess
 import random
+import copy
 import test_ff_certificates as suite
 
 _original_run = suite.run
+_original_check_both = suite.check_both
+
+def check_both(text, proof):
+    result = _original_check_both(text, proof)
+    _original_check_both(text, suite.checker.try_balance_certificate(proof))
+    return result
+
+suite.check_both = check_both
+
+def balancing_cases():
+    fc = suite.checker
+    # A valid but needlessly expensive proof: hundreds of expanding prefix
+    # sums cancel back to the original input 1=0. Rebalancing must respect the
+    # existing checker limit, rather than increase it to accept the raw trace.
+    text = suite.source(7, ['(= (as ff1 F) (as ff0 F))'])
+    nodes = [['input','0']]; root = 0
+    for coefficient in [1,6]:
+        for degree in range(1,251):
+            term = len(nodes); nodes.append(['mul','0',str(coefficient),['0']*degree])
+            index = len(nodes); nodes.append(['add',str(root),str(term)]); root = index
+    cert = ['ff-certificate',':version','1',':modulus','7',':variables',['x'],
+            ':inputs',[[['1']]],':nodes',nodes,':root',str(root)]
+    raw = fc.sexpr(cert)
+    suite.rejected(fc.verify,text,raw)
+    balanced = fc.balance_certificate(raw)
+    _original_check_both(text,balanced)
+    suite.rejected(fc.verify,text.replace('ff1','ff0'),balanced)
+    for replacement in [['add','1','0'],['mul','0','0',[]],['input','2'],['hole']]:
+        bad = copy.deepcopy(cert); bad[bad.index(':nodes')+1][1] = replacement
+        suite.rejected(fc.balance_certificate,fc.sexpr(bad))
+    print('proof balancing: retained-term recovery, unchanged-input binding and malformed/cyclic nodes checked')
 
 def native_run(binary, text, options=''):
     return _original_run(binary, text, ':backend native ' + options)
@@ -137,6 +169,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--z3', required=True)
     args = parser.parse_args()
+    balancing_cases()
     branch_cases(args.z3)
     uniqueness_cases(args.z3)
     count = 0

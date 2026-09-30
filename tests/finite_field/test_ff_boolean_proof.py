@@ -160,7 +160,7 @@ def main():
                          '(= w (ff.add (ff.mul y y y) (as ff1 F)))', '(not (= z w))']
             certify(source('\n'.join(f'(assert {e})' for e in equations), p, extra))
         # Boolean-domain branch closure is exported using only ordinary PAC
-        # operations, so the unmodified Alethe/PAC checkers must accept it too.
+        # operations, so the existing Alethe/PAC checkers must accept it too.
         if args.backend == 'native':
             for p in [2, 7, LARGE]:
                 certify(source('(assert (= (ff.mul x x) x))\n'
