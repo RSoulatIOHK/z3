@@ -551,7 +551,11 @@ class Case:
 
 
 def compact(g, literals, dag):
-    _, cert, _ = fc.verify_problem(Case(g, literals), dag)
+    # Producer-side pruning is untrusted. Validate its syntax here; the full
+    # algebra and original-input binding are checked by verify_export before
+    # publishing, and independently again by check_bundle on the stored bundle.
+    cert = fc.read_certificate(dag)
+    require(len(cert[':inputs']) == len(literals), 'input count mismatch')
     nodes, used, pending = cert[':nodes'], set(), [int(cert[':root'])]
     while pending:
         i = pending.pop()
@@ -586,7 +590,6 @@ def compact(g, literals, dag):
     for n in cert[':nodes']:
         if n[0] == 'mul': n[3] = [renumber[int(v)] for v in n[3]]
     result = fc.sexpr(['ff-certificate'] + [x for kv in cert.items() for x in kv]) + '\n'
-    fc.verify_problem(case, result)
     return core, result
 
 
@@ -699,7 +702,7 @@ class Writer:
         import ff_proof_pipeline as pp
         g = self.g; literals, dag = record['literals'], record['certificate']
         case = Case(g, literals)
-        _, cert, values = fc.verify_problem(case, dag)
+        cert, pac = pp.verified_pac(case, dag)
         variables, p = case.original_variables(cert[':variables']), g.p
         def poly(value): return fc.sexpr(fc.polynomial_term(value, p, variables))
         zero, one = f'(as ff0 {sort_text(p)})', f'(as ff1 {sort_text(p)})'
@@ -728,7 +731,6 @@ class Writer:
             proofs.append(self.transfer(equation, canonical, equivalence, name))
         conj = proofs[0] if len(proofs) == 1 else self.step(['(and ' + ' '.join(normalized) + ')'], 'and_intro', proofs)
         conversion = self.step(['(not (set.is_empty (@ff.variety (@ff.ideal ' + ' '.join(polynomials) + '))))'], 'ff_poly_conversion', [conj])
-        pac = pp.export_pac(cert, values)
         self.step([], 'ff_pac', [conversion], [pac])
         discharged = [f'(not {g.literal(x)})' for x in literals] + ['false']
         self.step(discharged, 'subproof', name=lemma, discharge=assumptions)

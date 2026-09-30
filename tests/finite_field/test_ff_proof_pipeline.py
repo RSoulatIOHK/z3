@@ -101,6 +101,26 @@ def main():
             dag = pp.run([args.z3, '-in'], 10, normalized + '(ff-certify)\n')['stdout']
             assert 'ff-certificate-unavailable' in dag
             reject(lambda: pp.export_artifact(text, dag)); rejected += 1
+        # PAC compaction must preserve sharing, cancellation to zero, and a
+        # non-final root. Check both encodings with the actual external checker.
+        for p in [2, 7, LARGE]:
+            # PAC requires variables to occur in its input axioms.
+            text = source(p, '(assert (= (as ff1 F) (as ff0 F)))\n(assert (= (ff.mul x y) (as ff0 F)))')
+            nodes = [['input','0'], ['mul','0','1',['0','1']],
+                     ['mul','1',str(p-1),[]], ['add','1','2'],
+                     ['add','3','0'], ['add','3','4'], ['mul','5','1',[]]]
+            raw = pp.fc.sexpr(['ff-certificate', ':version','1', ':modulus',str(p),
+                              ':variables',['x','y'], ':inputs',[[['1']],[['1','0','1']]],
+                              ':nodes',nodes, ':root','5'])
+            _, compact = pp.verified_pac(pp.fc.Problem(text), raw)
+            _, plain = pp.verified_pac(pp.fc.Problem(text), raw, compact=False)
+            assert len(compact) < len(plain)
+            for value in [compact, plain]:
+                path = root / 'composition.pac'; path.write_text(value)
+                pp.run([args.ffpacheck, str(path)], 10)
+            rejected_input = text.replace('ff1 F', 'ff0 F')
+            reject(lambda: pp.verified_pac(pp.fc.Problem(rejected_input), raw))
+            rejected += 1
         # Real external negative checks: missing contradiction and false arithmetic.
         for pac in ['', 'm 7;\na 1 v1;\n', 'm 7;\na 1 v1;\nl 2 1*(1), 1;\nunsat\n']:
             path = root / 'bad.pac'; path.write_text(pac)

@@ -41,11 +41,27 @@ can be supplied with `--archives DIR` (`carcara.tar.gz`, `ffpacheck.tar.gz`).
 See [the checker trust boundary](proof_checkers/README.md) for required input
 binding and why raw external-checker acceptance alone is insufficient.
 
-The six proof suites include native wire-elimination and forced-F4 derivations and exhaustive small-field
+The seven proof suites include native wire-elimination and forced-F4 derivations and exhaustive small-field
 oracles, independent DAG/Alethe replay, original-input binding,
 external literal and Boolean pipelines, native SAT clause replay, tampered/truncated/wrong-input rejection,
 and resource recovery. Missing checkers are an error, not a skipped pass.
 Use `--suite all` to combine core and proof selections.
+
+The artifact pipeline replays the polynomial DAG while exporting PAC and
+releases each polynomial after its last reference. Its two-million weighted
+term storage bound applies to live values, including normalized inputs;
+cumulative arithmetic work and output-size bounds still apply. The legacy
+standalone replay can retain all values for callers that need them. Tests cover
+both modes, repeated operands, non-final roots, dead malformed nodes, unchanged
+PAC output, and original-input mismatch. Producer compaction validates structure
+without repeating algebraic replay: the complete bundle is checked before
+publication, then checked afresh from its stored original input by the bundle
+checker. A corruption regression verifies that this boundary cannot publish a
+false producer result. PAC export also combines single-use chains into existing
+linear-combination inferences, retaining shared intermediate polynomials.
+External-checker regressions cover cancellation to zero, repeated references,
+and roots preceding unused nodes. Carcara and FFPacheck remain required
+acceptance steps.
 
 Every invocation requires a new output directory and writes per-suite logs plus
 `summary.json`, including commands, statuses, timings and the selected build.

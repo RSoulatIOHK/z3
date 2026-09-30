@@ -87,6 +87,9 @@ class Arithmetic:
         require(self.retained <= 2000000, "checker retained-term limit")
         return value
 
+    def release(self, value):
+        self.retained -= sum(1 + len(mon) for mon in value)
+
     def add(self, a, b, scale=1):
         self.tick(len(a) + len(b))
         out = a.copy()
@@ -364,12 +367,44 @@ def try_balance_certificate(text):
     except Invalid: return text
 
 
+def read_certificate(certificate_text):
+    """Validate bounded DAG syntax, without claiming an input-bound proof."""
+    objects = parse(certificate_text)
+    require(len(objects) == 1 and isinstance(objects[0], list) and objects[0] and objects[0][0] == 'ff-certificate', "expected one certificate")
+    cert = attributes(objects[0][1:], {':version', ':modulus', ':variables', ':inputs', ':nodes', ':root'})
+    require(cert[':version'] == '1', "unsupported certificate version")
+    ar = Arithmetic(natural(cert[':modulus']))
+    require(isinstance(cert[':variables'], list) and isinstance(cert[':inputs'], list), "invalid certificate inputs")
+    nodes = cert[':nodes']
+    require(isinstance(nodes, list) and 0 < len(nodes) <= 100000, "node limit")
+    require(natural(cert[':root']) < len(nodes), "bad root")
+    for i, node in enumerate(nodes):
+        require(isinstance(node, list) and node, "malformed node")
+        if node[0] == 'input':
+            require(len(node) == 2 and natural(node[1]) < len(cert[':inputs']), "bad input reference")
+        elif node[0] == 'add':
+            require(len(node) == 3 and natural(node[1]) < i and natural(node[2]) < i, "bad addition references")
+        elif node[0] == 'mul':
+            require(len(node) == 4 and natural(node[1]) < i and isinstance(node[3], list), "bad multiplication")
+            decode_polynomial([[node[2]] + node[3]], ar, len(cert[':variables']))
+        else:
+            raise Invalid("unknown derivation rule")
+    return cert
+
+
 def verify(problem_text, certificate_text):
     return verify_problem(Problem(problem_text), certificate_text)
 
 
-def verify_problem(problem, certificate_text):
-    """Replay a DAG against independently supplied typed input equations."""
+def verify_problem(problem, certificate_text, *, retain_values=True, on_node=None):
+    """Replay a DAG against independently supplied typed input equations.
+
+    Streaming mode releases a value only after its last reference. It applies
+    the same storage bound to live values (including normalized inputs), while
+    retaining the cumulative arithmetic work bound and checking even dead nodes.
+    on_node receives provisional values; callers must discard its output unless
+    this function returns successfully with a checked contradiction.
+    """
     objects = parse(certificate_text)
     require(len(objects) == 1 and isinstance(objects[0], list) and objects[0] and objects[0][0] == 'ff-certificate', "expected one certificate")
     cert = attributes(objects[0][1:], {':version', ':modulus', ':variables', ':inputs', ':nodes', ':root'})
@@ -387,25 +422,57 @@ def verify_problem(problem, certificate_text):
         require(expected == decode_polynomial(raw, ar, len(names)), "input normalization mismatch")
     nodes = cert[':nodes']
     require(isinstance(nodes, list) and 0 < len(nodes) <= 100000, "node limit")
-    values = []
-    for node in nodes:
+    root = natural(cert[':root'])
+    require(root < len(nodes), "root does not derive 1 = 0")
+    # Validate references before any callback sees the certificate. Count both
+    # edges of add(i, i): sharing must never free an operand prematurely.
+    references, uses = [], [0] * len(nodes)
+    uses[root] = 1
+    for i, node in enumerate(nodes):
         require(isinstance(node, list) and node, "malformed node")
         if node[0] == 'input':
             require(len(node) == 2 and natural(node[1]) < len(inputs), "bad input reference")
-            value = inputs[natural(node[1])]
+            parents = ()
         elif node[0] == 'add':
-            require(len(node) == 3 and natural(node[1]) < len(values) and natural(node[2]) < len(values), "bad addition references")
-            value = ar.add(values[natural(node[1])], values[natural(node[2])])
+            require(len(node) == 3 and natural(node[1]) < i and natural(node[2]) < i, "bad addition references")
+            parents = (natural(node[1]), natural(node[2]))
         elif node[0] == 'mul':
-            require(len(node) == 4 and natural(node[1]) < len(values) and isinstance(node[3], list), "bad multiplication")
-            factor = decode_polynomial([[node[2]] + node[3]], ar, len(names))
-            value = ar.mul(values[natural(node[1])], factor)
+            require(len(node) == 4 and natural(node[1]) < i and isinstance(node[3], list), "bad multiplication")
+            parents = (natural(node[1]),)
         else:
             raise Invalid("unknown derivation rule")
+        references.append(parents)
+        for parent in parents:
+            uses[parent] += 1
+    if not retain_values:
+        # Inputs outlive their nodes; charge them separately, conservatively
+        # including aliases already retained by a typed problem's term cache.
+        for value in inputs:
+            ar.keep(value)
+    values = []
+    for i, node in enumerate(nodes):
+        parents = references[i]
+        if node[0] == 'input':
+            value = inputs[natural(node[1])]
+        elif node[0] == 'add':
+            value = ar.add(values[parents[0]], values[parents[1]])
+        else:
+            factor = decode_polynomial([[node[2]] + node[3]], ar, len(names))
+            value = ar.mul(values[parents[0]], factor)
         values.append(ar.keep(value))
-    root = natural(cert[':root'])
-    require(root < len(values) and values[root] == {(): 1}, "root does not derive 1 = 0")
-    return problem, cert, values
+        if on_node is not None:
+            on_node(cert, i, value)
+        if not retain_values:
+            for parent in parents:
+                uses[parent] -= 1
+                if not uses[parent]:
+                    ar.release(values[parent])
+                    values[parent] = None
+            if not uses[i]:
+                ar.release(value)
+                values[i] = None
+    require(values[root] == {(): 1}, "root does not derive 1 = 0")
+    return problem, cert, values if retain_values else None
 
 
 def polynomial_term(value, p, variables):

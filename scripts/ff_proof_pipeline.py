@@ -130,59 +130,142 @@ def pac_polynomial(value):
     return ' + '.join(terms) or '0'
 
 
-def export_pac(cert, values):
-    """Translate only the root's ancestors; retain sharing instead of flattening.
+class PacWriter:
+    """Bounded PAC output from individually checked DAG values.
 
-    Each PAC linear combination has the same polynomial value as its DAG node.
-    FFPacheck additionally reduces x^p=x, which preserves every such identity.
+    Only root ancestors are exported, with sharing intact. All input axioms
+    retain their original order for independent original-formula binding.
     """
-    nodes, root = cert[':nodes'], fc.natural(cert[':root'])
-    used, pending = set(), [root]
-    while pending:
-        i = pending.pop()
-        if i in used:
-            continue
-        used.add(i)
-        n = nodes[i]
-        if n[0] == 'add':
-            pending.extend([int(n[1]), int(n[2])])
-        elif n[0] == 'mul':
-            pending.append(int(n[1]))
-    p = int(cert[':modulus'])
-    ar = fc.Arithmetic(p)
-    inputs = [fc.decode_polynomial(f, ar, len(cert[':variables'])) for f in cert[':inputs']]
-    lines = [f'm {p};']
-    # All input axioms appear in their original order, even if unused. The
-    # independent bundle check binds this exact list to the original formula.
-    lines += [f'a {i + 1} {pac_polynomial(f)};' for i, f in enumerate(inputs)]
-    ids, fresh = {}, len(inputs) + 1
-    for i in sorted(used):
-        n = nodes[i]
+    def __init__(self, cert):
+        self.nodes, self.root = cert[':nodes'], fc.natural(cert[':root'])
+        self.used, pending = set(), [self.root]
+        while pending:
+            i = pending.pop()
+            if i in self.used:
+                continue
+            self.used.add(i)
+            n = self.nodes[i]
+            if n[0] == 'add':
+                pending.extend([int(n[1]), int(n[2])])
+            elif n[0] == 'mul':
+                pending.append(int(n[1]))
+        p = int(cert[':modulus'])
+        ar = fc.Arithmetic(p)
+        self.lines, self.size = [], 0
+        self.emit(f'm {p};')
+        for i, raw in enumerate(cert[':inputs']):
+            value = fc.decode_polynomial(raw, ar, len(cert[':variables']))
+            self.emit(f'a {i + 1} {pac_polynomial(value)};')
+        self.ids, self.fresh = {}, len(cert[':inputs']) + 1
+
+    def emit(self, line):
+        self.size += len(line.encode('utf-8')) + 1
+        fc.require(self.size <= 32 * 1024 * 1024, 'PAC output byte limit')
+        self.lines.append(line)
+
+    def node(self, i, value):
+        if i not in self.used:
+            return
+        n = self.nodes[i]
         if n[0] == 'input':
-            ids[i] = int(n[1]) + 1
-            continue
+            self.ids[i] = int(n[1]) + 1
+            return
         if n[0] == 'add':
-            op = f'{ids[int(n[1])]}*(1) + {ids[int(n[2])]}*(1)'
+            op = f'{self.ids[int(n[1])]}*(1) + {self.ids[int(n[2])]}*(1)'
         else:
             factor = {tuple(map(int, n[3])): int(n[2])}
-            op = f'{ids[int(n[1])]}*({pac_polynomial(factor)})'
-        lines.append(f'l {fresh} {op}, {pac_polynomial(values[i])};')
-        ids[i] = fresh
-        fresh += 1
-    # An axiom 1 alone does not close FFPacheck's branch; a checked inference does.
-    if nodes[root][0] == 'input':
-        lines.append(f'l {fresh} {ids[root]}*(1), 1;')
-    lines.append('unsat')
-    return '\n'.join(lines) + '\n'
+            op = f'{self.ids[int(n[1])]}*({pac_polynomial(factor)})'
+        self.emit(f'l {self.fresh} {op}, {pac_polynomial(value)};')
+        self.ids[i] = self.fresh
+        self.fresh += 1
+
+    def finish(self):
+        # An axiom 1 alone does not close FFPacheck; a checked inference does.
+        if self.nodes[self.root][0] == 'input':
+            self.emit(f'l {self.fresh} {self.ids[self.root]}*(1), 1;')
+        self.emit('unsat')
+        return '\n'.join(self.lines) + '\n'
+
+
+class CompactPacWriter(PacWriter):
+    """Inline single-use steps into existing PAC linear combinations.
+
+    Shared nodes stay as named anchors. Every original DAG node is still
+    independently replayed; this only avoids printing its expanded polynomial
+    when no later PAC step needs to refer to it separately.
+    """
+    def __init__(self, cert):
+        super().__init__(cert)
+        self.ar = fc.Arithmetic(int(cert[':modulus']))
+        self.work = 0
+        uses = [0] * len(self.nodes)
+        for i in self.used:
+            n = self.nodes[i]
+            parents = n[1:3] if n[0] == 'add' else n[1:2] if n[0] == 'mul' else []
+            for parent in parents:
+                uses[int(parent)] += 1
+        self.anchors = {i for i in self.used if uses[i] > 1 or self.nodes[i][0] == 'input'} | {self.root}
+
+    def node(self, i, value):
+        if i not in self.anchors:
+            return
+        if self.nodes[i][0] == 'input':
+            return super().node(i, value)
+        terms, pending = {}, [(i, 1, ())]
+        while pending:
+            j, coefficient, mon = pending.pop()
+            self.work += 1 + len(mon)
+            fc.require(self.work <= 2000000, 'PAC composition work limit')
+            if j != i and j in self.anchors:
+                key = j, mon
+                terms[key] = (terms.get(key, 0) + coefficient) % self.ar.p
+                continue
+            n = self.nodes[j]
+            if n[0] == 'add':
+                pending.extend((int(parent), coefficient, mon) for parent in n[1:3])
+            else:
+                factor = tuple(map(int, n[3]))
+                fc.require(len(mon) + len(factor) <= 1024, 'PAC composition degree limit')
+                pending.append((int(n[1]), coefficient * int(n[2]) % self.ar.p, tuple(sorted(mon + factor))))
+        grouped = {}
+        for (j, mon), c in sorted(terms.items()):
+            if c:
+                grouped.setdefault(j, {})[mon] = c
+        # Cancellation can produce a zero node; express it as 0 times a proved
+        # input rather than introduce a new axiom. PAC checks this inference.
+        if not grouped:
+            grouped[next(j for j in self.ids if self.nodes[j][0] == 'input')] = {}
+        op = ' + '.join(f'{self.ids[j]}*({pac_polynomial(f)})' for j, f in grouped.items())
+        self.emit(f'l {self.fresh} {op}, {pac_polynomial(value)};')
+        self.ids[i] = self.fresh
+        self.fresh += 1
+
+
+def export_pac(cert, values):
+    writer = PacWriter(cert)
+    for i in range(len(cert[':nodes'])):
+        writer.node(i, values[i])
+    return writer.finish()
+
+
+def verified_pac(problem, dag, *, compact=True):
+    writer = None
+    def emit(cert, i, value):
+        nonlocal writer
+        if writer is None:
+            writer = CompactPacWriter(cert) if compact else PacWriter(cert)
+        writer.node(i, value)
+    _, cert, _ = fc.verify_problem(problem, dag, retain_values=False, on_node=emit)
+    # Never publish provisional PAC output before the entire replay succeeds.
+    return cert, writer.finish()
 
 
 def export_artifact(original, dag):
     bridge = LiteralProblem(original)
     normalized = bridge.normalized()
-    _, cert, values = fc.verify(normalized, dag)
+    cert, pac = verified_pac(fc.Problem(normalized), dag)
     p = int(cert[':modulus'])
     variables = [bridge.term_text(v, choices=True) for v in cert[':variables']]
-    pac = export_pac(cert, values)
     lines = ['; Z3 FF artifact profile: checked original-input bridge + Alethe/PAC.']
     serial = 0
 

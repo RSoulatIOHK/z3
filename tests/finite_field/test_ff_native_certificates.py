@@ -4,6 +4,7 @@ import subprocess
 import random
 import copy
 import test_ff_certificates as suite
+import ff_proof_pipeline as pipeline
 
 _original_run = suite.run
 _original_check_both = suite.check_both
@@ -11,6 +12,10 @@ _original_check_both = suite.check_both
 def check_both(text, proof):
     result = _original_check_both(text, proof)
     _original_check_both(text, suite.checker.try_balance_certificate(proof))
+    fc = suite.checker
+    _, cert, values = fc.verify(text, proof)
+    streamed, pac = pipeline.verified_pac(fc.Problem(text), proof, compact=False)
+    assert cert == streamed and pac == pipeline.export_pac(cert, values)
     return result
 
 suite.check_both = check_both
@@ -30,12 +35,36 @@ def balancing_cases():
             ':inputs',[[['1']]],':nodes',nodes,':root',str(root)]
     raw = fc.sexpr(cert)
     suite.rejected(fc.verify,text,raw)
+    observed = []
+    result = fc.verify_problem(fc.Problem(text), raw, retain_values=False,
+                               on_node=lambda c, i, v: observed.append((i, len(v))))
+    assert result[2] is None and len(observed) == len(nodes)
+    assert observed[-1] == (root, 1)
+    suite.rejected(fc.verify_problem, fc.Problem(text.replace('ff1','ff0')), raw)
+    # A non-final root and repeated operand need independent lifetime handling.
+    tiny = copy.deepcopy(cert)
+    tiny[tiny.index(':nodes')+1] = [['input','0'], ['add','0','0'], ['mul','1','4',[]], ['mul','0','2',[]]]
+    tiny[tiny.index(':root')+1] = '2'
+    _, pac = pipeline.verified_pac(fc.Problem(text), fc.sexpr(tiny), compact=False)
+    assert pac == 'm 7;\na 1 1;\nl 2 1*(1) + 1*(1), 2;\nl 3 2*(4), 1;\nunsat\n'
+    _, compact_pac = pipeline.verified_pac(fc.Problem(text), fc.sexpr(tiny))
+    assert compact_pac == 'm 7;\na 1 1;\nl 2 1*(1), 1;\nunsat\n'
+    def stream(problem, proof):
+        return pipeline.verified_pac(fc.Problem(problem), proof)
+    suite.rejected(stream, text.replace('ff1','ff0'), fc.sexpr(tiny))
+    # Dead nodes still have to be well-formed and arithmetically valid.
+    for replacement in [['add','4','0'], ['mul','0','7',[]], ['input','1'], ['hole']]:
+        bad = copy.deepcopy(tiny); bad[bad.index(':nodes')+1][-1] = replacement
+        suite.rejected(stream, text, fc.sexpr(bad))
+    wrong = copy.deepcopy(tiny); wrong[wrong.index(':root')+1] = '3'
+    suite.rejected(stream, text, fc.sexpr(wrong))
     balanced = fc.balance_certificate(raw)
     _original_check_both(text,balanced)
     suite.rejected(fc.verify,text.replace('ff1','ff0'),balanced)
     for replacement in [['add','1','0'],['mul','0','0',[]],['input','2'],['hole']]:
         bad = copy.deepcopy(cert); bad[bad.index(':nodes')+1][1] = replacement
         suite.rejected(fc.balance_certificate,fc.sexpr(bad))
+        suite.rejected(fc.read_certificate,fc.sexpr(bad))
     print('proof balancing: retained-term recovery, unchanged-input binding and malformed/cyclic nodes checked')
 
 def native_run(binary, text, options=''):

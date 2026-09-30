@@ -8,6 +8,7 @@ import random
 import sys
 import tempfile
 import time
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -235,6 +236,19 @@ def main():
         mutated(lambda p:p['records'][fi].update(certificate=p['records'][fi]['certificate'].replace(':modulus 7',':modulus 3')))
         mutated(lambda p:p['records'][fi].update(literals=[1]))
         mutated(lambda p:p['records'][fi].update(rule='hole'))
+        # Even if an untrusted producer compaction supplies a syntactically
+        # valid but false derivation, no bundle may be published from it.
+        bad = copy.deepcopy(proof)
+        raw = bp.fc.parse(bad['records'][fi]['certificate'])[0]
+        attrs = bp.fc.attributes(raw[1:], {':version', ':modulus', ':variables', ':inputs', ':nodes', ':root'})
+        attrs[':nodes'].append(['mul', attrs[':root'], '2', []])
+        attrs[':root'] = str(len(attrs[':nodes']) - 1)
+        bad['records'][fi]['certificate'] = bp.fc.sexpr(['ff-certificate'] + [x for kv in attrs.items() for x in kv])
+        unpublished = root / 'invalid-producer'; unpublished.mkdir()
+        with patch.object(bp, 'produce', return_value=bad):
+            reject(lambda: bp.produce_bundle(text, unpublished, args.z3, 10))
+        assert not list(unpublished.iterdir())
+        rejected += 1
         for name, replacement in [('proof.alethe','(step evil (cl) :rule hole)\n'),
                                   ('lemma-0001.pac','m 7;\na 1 1;\nl 2 1*(1), 1;\nunsat\n')]:
             path=d/name; old=path.read_text();path.write_text(replacement)
