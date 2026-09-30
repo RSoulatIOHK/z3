@@ -1,4 +1,5 @@
 #include "cmd_context/cmd_context.h"
+#include "cmd_context/extra_cmds/ff_certificate_io.h"
 #include "cmd_context/parametric_cmd.h"
 #include "ast/ff_decl_plugin.h"
 #include "math/polynomial/ff_certificate.h"
@@ -203,52 +204,9 @@ namespace {
                                       m_params.get_uint("max_terms", 4096),
                                       native && options.ff_bit_propagation(), native && options.ff_batch(), false);
                 if (native) ff::configure_engine(arithmetic, options);
-                ptr_vector<expr> variables;
-                std::unordered_map<expr *, ff::polynomial> cache;
-                auto encode = [&](expr *root) {
-                    ptr_vector<expr> pending; pending.push_back(root);
-                    while (!pending.empty()) {
-                        if (!m.inc()) throw ff::exhausted();
-                        expr *t = pending.back();
-                        if (cache.contains(t)) { pending.pop_back(); continue; }
-                        if (!is_app(t) || t->get_sort() != s)
-                            throw cmd_exception("ff-certify requires pure field terms");
-                        app *a = to_app(t);
-                        if (!is_uninterp_const(a) && a->get_family_id() != field.get_fid())
-                            throw cmd_exception("ff-certify does not yet certify theory combination");
-                        bool ready = true;
-                        for (expr *arg : *a) if (!cache.contains(arg)) { pending.push_back(arg); ready = false; }
-                        if (!ready) continue;
-                        rational value;
-                        ff::polynomial f;
-                        if (field.is_numeral(t, value)) f = arithmetic.constant(value);
-                        else if (is_uninterp_const(t)) {
-                            f = arithmetic.variable(variables.size()); variables.push_back(t);
-                        }
-                        else if (a->get_decl_kind() == OP_FF_NEG)
-                            f = arithmetic.scale(cache.at(a->get_arg(0)), rational(-1));
-                        else if (a->get_decl_kind() == OP_FF_ADD || a->get_decl_kind() == OP_FF_MUL ||
-                                 a->get_decl_kind() == OP_FF_BITSUM) {
-                            bool mul = a->get_decl_kind() == OP_FF_MUL;
-                            f = arithmetic.constant(rational(mul ? 1 : 0));
-                            rational weight(1);
-                            for (expr *arg : *a) {
-                                f = mul ? arithmetic.mul(f, cache.at(arg)) : arithmetic.add(std::move(f), cache.at(arg), weight);
-                                if (a->get_decl_kind() == OP_FF_BITSUM) weight = mod(rational(2) * weight, prime);
-                            }
-                        }
-                        else throw cmd_exception("ff-certify: unsupported field operator");
-                        cache.emplace(t, std::move(f));
-                    }
-                    return cache.at(root);
-                };
+                ff_certificate_io io(ctx, s);
                 std::vector<ff::polynomial> equations;
-                for (expr *literal : literals) {
-                    auto *eq = to_app(literal);
-                    auto lhs = encode(eq->get_arg(0));
-                    auto rhs = encode(eq->get_arg(1));
-                    equations.push_back(arithmetic.add(std::move(lhs), rhs, rational(-1)));
-                }
+                for (expr* literal : literals) equations.push_back(io.equation(literal, arithmetic));
                 ff::certificate proof;
                 if (!ff::certify(arithmetic, equations, proof, m_params.get_uint("max_nodes", 100000), backend, m_params.get_bool("unique", true), m_params.get_bool("branches", true))) {
                     ctx.regular_stream() << "(ff-certificate-unavailable no-polynomial-refutation)\n";
@@ -257,31 +215,7 @@ namespace {
                 // Buffer the entire object so cancellation cannot leave a
                 // truncated object that looks like a successful certificate.
                 std::ostringstream out;
-                out << "(ff-certificate\n :version 1\n :modulus " << prime << "\n :variables (";
-                for (expr *v : variables) { ctx.display(out, v); out << ' '; }
-                out << ")\n :inputs (";
-                for (auto const &f : equations) {
-                    if (!m.inc()) throw ff::exhausted();
-                    out << "\n  (";
-                    for (auto const &[mon, c] : f) {
-                        out << '(' << c;
-                        for (unsigned v : mon) out << ' ' << v;
-                        out << ')';
-                    }
-                    out << ')';
-                }
-                out << ")\n :nodes (";
-                for (auto const &n : proof.nodes) {
-                    if (!m.inc()) throw ff::exhausted();
-                    if (n.kind == ff::certificate::rule::input) out << "\n  (input " << n.left << ')';
-                    else if (n.kind == ff::certificate::rule::add) out << "\n  (add " << n.left << ' ' << n.right << ')';
-                    else {
-                        out << "\n  (mul " << n.left << ' ' << n.coefficient << " (";
-                        for (unsigned v : n.factor) out << v << ' ';
-                        out << "))";
-                    }
-                }
-                out << ")\n :root " << proof.root << ")\n";
+                io.display(out, equations, proof);
                 ctx.regular_stream() << out.str();
             }
             catch (ff::exhausted const &) {
