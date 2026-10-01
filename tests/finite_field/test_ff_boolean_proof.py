@@ -7,6 +7,8 @@ from pathlib import Path
 import random
 import sys
 import tempfile
+import time
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -52,7 +54,7 @@ def evaluate(g, assignment):
     return all(values[a] for a in g.assertions)
 
 
-def check_boolean_search():
+def check_boolean_search(factory=bp.Search):
     """Adjudicate SAT independently and replay every learned resolution clause."""
     rng = random.Random(926)
     clauses = [(1,), (-1,), (2,), (-2,), (1, 2), (1, -2), (-1, 2), (-1, -2)]
@@ -63,7 +65,7 @@ def check_boolean_search():
     checks, learned = 0, False
     for original in cases:
         original = [bp.clause(c) for c in original]
-        search = bp.Search(original)
+        search = factory(original)
         # Reuse the search after adding a blocking clause, as field lemmas do.
         added = []
         for _ in range(3):
@@ -94,21 +96,55 @@ def check_boolean_search():
             blocked = bp.clause(-v if result.get(v, False) else v for v in variables)
             added.append(blocked)
             search.append(blocked, dict(rule='field', clause=list(blocked)))
+        if isinstance(search, bp.NativeSearch): search.close()
     assert learned
     return checks
 
 
+def check_normalization_lifetimes():
+    # A shared chain with repeated operands and equality endpoints exercises
+    # last-use accounting independently of any algebraic refutation strategy.
+    body = '(define-fun f0 () F (ff.add x y))\n'
+    for i in range(1, 71): body += f'(define-fun f{i} () F (ff.mul f{i-1} (ff.add x y)))\n'
+    body += '(assert (= f70 f69))\n(assert (not (= f69 f68)))\n(assert (= (ff.add f68 f68) f67))'
+    g = bp.Graph(source(body, LARGE))
+    literals = [i for i in range(1, g.boolean_nodes) if g.field_atom(i)]
+    literals[1] = -literals[1]
+    old, streamed = bp.Case(g, literals), bp.Case(g, literals)
+    names = {name:i for i,name in enumerate(old.declarations)}
+    class Measured(pp.fc.Arithmetic):
+        def __init__(self, p): super().__init__(p); self.peak = 0
+        def keep(self, value):
+            result = super().keep(value); self.peak = max(self.peak, self.retained); return result
+        def release(self, value):
+            super().release(value); assert self.retained >= 0
+    eager_ar, stream_ar = Measured(LARGE), Measured(LARGE)
+    expected = [old.equation(lit, names, eager_ar) for lit in literals]
+    actual = list(streamed.equation_values(names, stream_ar))
+    assert expected == actual
+    assert stream_ar.retained == 0
+    assert stream_ar.peak * 4 < eager_ar.peak, (stream_ar.peak, eager_ar.peak)
+    print(f'input normalization: identical equations; peak retained weight {eager_ar.peak} -> {stream_ar.peak}')
+
+
 def main():
+    check_normalization_lifetimes()
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ['z3','carcara','ffpacheck']: parser.add_argument('--'+name, required=True)
+    parser.add_argument('--backend', choices=['auto', 'native'], default='auto')
+    parser.add_argument('--field-session', action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument('--boolean-backend', choices=['auto', 'native', 'incremental', 'integrated', 'legacy'], default='auto')
     args = parser.parse_args()
-    search_checks = check_boolean_search()
+    factory = (lambda clauses: bp.NativeSearch(clauses, args.z3, time.monotonic() + 10)) if args.backend == 'native' else bp.Search
+    if args.boolean_backend == 'incremental':
+        factory = lambda clauses: bp.IncrementalSearch(clauses, args.z3, time.monotonic() + 10)
+    search_checks = check_boolean_search(factory)
     checked, rejected, sat_count, unsat_count, unknown_count = 0, 0, 0, 0, 0
     with tempfile.TemporaryDirectory(prefix='ff-boolean-tests-') as temp:
         root = Path(temp)
         def certify(text):
             nonlocal checked
-            proof = bp.produce(text, args.z3, 10)
+            proof = bp.produce(text, args.z3, 10, backend=args.backend,boolean_backend=args.boolean_backend,field_session=args.field_session)
             files = bp.verify_export(text, proof)
             d = root / str(checked); d.mkdir()
             (d/'problem.smt2').write_text(text)
@@ -137,6 +173,33 @@ def main():
                 '(assert (= x y))\n(assert (not (= (ite (= x y) (as ff1 F) (as ff0 F)) (as ff1 F))))',
                 '(assert (not (= (ite (xor a b) (ite a x y) y) (ite a (ite b y x) y))))',
             ]: certify(source(body,p))
+        # Shared affine/zero-test propagation exports ordinary PAC identities.
+        # Check their complete Boolean/Alethe bundles with the external pair too.
+        for p in [7, LARGE]:
+            extra = '\n'.join(f'(declare-const {v} F)' for v in ['z','w','t','u'])
+            S = '(ff.add (ff.mul x x) (ff.neg x))'
+            equations = [f'(= y (ff.add (as ff3 F) (ff.neg (ff.mul z {S}))))',
+                         f'(= (ff.mul (ff.add y (as ff-5 F)) {S}) (as ff0 F))',
+                         f'(= t (ff.add (as ff3 F) (ff.neg (ff.mul (as ff2 F) w {S}))))',
+                         f'(= (ff.mul (as ff2 F) (ff.add t (as ff-5 F)) {S}) (as ff0 F))',
+                         '(not (= y t))']
+            certify(source('\n'.join(f'(assert {e})' for e in equations), p, extra))
+            equations = ['(= x y)', '(= z (ff.add (ff.mul x x x) (as ff1 F)))',
+                         '(= w (ff.add (ff.mul y y y) (as ff1 F)))', '(not (= z w))']
+            certify(source('\n'.join(f'(assert {e})' for e in equations), p, extra))
+        # Boolean-domain branch closure is exported using only ordinary PAC
+        # operations, so the existing Alethe/PAC checkers must accept it too.
+        if args.backend == 'native':
+            for p in [2, 7, LARGE]:
+                certify(source('(assert (= (ff.mul x x) x))\n'
+                               '(assert (= (ff.mul x y) (as ff1 F)))\n'
+                               '(assert (= (ff.mul (ff.add (as ff1 F) (ff.neg x)) z) (as ff1 F)))',
+                               p, '(declare-const z F)'))
+            certify(source('(assert (= (ff.mul x x) x))\n'
+                           '(assert (= (ff.mul y y) y))\n'
+                           '(assert (= (ff.mul z z) z))\n'
+                           '(assert (= (ff.add x y z) (as ff4 F)))',
+                           LARGE, '(declare-const z F)'))
         # Definitions/lets preserve lexical scope, including simultaneous binds.
         certify(source('(assert (and alias (not (let ((a b) (b a)) (= a b)))))',
                        extra='(define-fun alias () Bool (= a b))'))
@@ -160,7 +223,7 @@ def main():
             chain = f'(define-fun t{i} () Bool (and t{i-1} t{i-1}))\n' + chain
         text = source(chain,extra='(define-fun t0 () Bool a)')
         g=bp.Graph(text); assert len(g.nodes) < 410
-        proof=bp.produce(text,args.z3,10); files=bp.verify_export(text,proof)
+        proof=bp.produce(text,args.z3,10,backend=args.backend,boolean_backend=args.boolean_backend,field_session=args.field_session); files=bp.verify_export(text,proof)
         assert len(files['proof.alethe']) < 1000000
         # Exhaustively adjudicate randomized mixed formulas over tiny fields.
         rng=random.Random(1919)
@@ -175,7 +238,7 @@ def main():
                 body=f'(and {rng.choice(terms)} (not {rng.choice(terms)}))'
                 text=source('(assert '+body+')',p); g=bp.Graph(text)
                 sat=any(evaluate(g,dict(zip(['a','b','x','y'],v))) for v in itertools.product([False,True],[False,True],range(p),range(p)))
-                try: proof=bp.produce(text,args.z3,3)
+                try: proof=bp.produce(text,args.z3,3,backend=args.backend,boolean_backend=args.boolean_backend,field_session=args.field_session)
                 except pp.fc.Invalid:
                     if sat: sat_count+=1
                     else: unknown_count+=1
@@ -200,6 +263,19 @@ def main():
         mutated(lambda p:p['records'][fi].update(certificate=p['records'][fi]['certificate'].replace(':modulus 7',':modulus 3')))
         mutated(lambda p:p['records'][fi].update(literals=[1]))
         mutated(lambda p:p['records'][fi].update(rule='hole'))
+        # Even if an untrusted producer compaction supplies a syntactically
+        # valid but false derivation, no bundle may be published from it.
+        bad = copy.deepcopy(proof)
+        raw = bp.fc.parse(bad['records'][fi]['certificate'])[0]
+        attrs = bp.fc.attributes(raw[1:], {':version', ':modulus', ':variables', ':inputs', ':nodes', ':root'})
+        attrs[':nodes'].append(['mul', attrs[':root'], '2', []])
+        attrs[':root'] = str(len(attrs[':nodes']) - 1)
+        bad['records'][fi]['certificate'] = bp.fc.sexpr(['ff-certificate'] + [x for kv in attrs.items() for x in kv])
+        unpublished = root / 'invalid-producer'; unpublished.mkdir()
+        with patch.object(bp, 'produce', return_value=bad):
+            reject(lambda: bp.produce_bundle(text, unpublished, args.z3, 10))
+        assert not list(unpublished.iterdir())
+        rejected += 1
         for name, replacement in [('proof.alethe','(step evil (cl) :rule hole)\n'),
                                   ('lemma-0001.pac','m 7;\na 1 1;\nl 2 1*(1), 1;\nunsat\n')]:
             path=d/name; old=path.read_text();path.write_text(replacement)
@@ -207,7 +283,7 @@ def main():
             path.write_text(old)
         # No variable declaration can accidentally provide the modulus check.
         constant=source('(assert (= (as ff2 F) (as ff0 F)))',3)
-        proof=bp.produce(constant,args.z3,10)
+        proof=bp.produce(constant,args.z3,10,backend=args.backend,boolean_backend=args.boolean_backend,field_session=args.field_session)
         wrong=constant.replace('FiniteField 3','FiniteField 2')
         reject(lambda:bp.verify_export(wrong,proof));rejected+=1
         for text in [

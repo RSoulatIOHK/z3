@@ -72,6 +72,45 @@ def main():
         assert run(z3, src + '(check-sat-using (using-params ff-solve :ff.' + param + ' 0))').strip() == 'unknown'
     # The public solver must conservatively recover after a native budget hit.
     assert run(z3, src + '(check-sat)', ['smt.ff.max_steps=0']).strip() == 'sat'
+    # The optional admission limit declines exact BV fallback, not native
+    # solving. Force native exhaustion on a satisfiable quadratic so the test
+    # exercises the fallback gate rather than a preprocessing shortcut.
+    fallback = src + '(check-sat-using smt)'
+    assert run(z3, fallback, ['smt.ff.bv_fallback_limit=1']).strip() == 'sat'
+    for limit, expected in [(0, 'sat'), (1, 'unknown'), (1000000, 'sat')]:
+        assert run(z3, fallback, ['smt.ff.max_steps=0',
+                   'smt.ff.bv_fallback_limit=' + str(limit)]).strip() == expected
+    # A local override must supersede the global limit, as for other SMT
+    # parameters. Field-free checks must be unaffected by the admission gate.
+    local = src + '(check-sat-using (using-params smt :ff.bv_fallback_limit 0))'
+    assert run(z3, local, ['smt.ff.max_steps=0',
+               'smt.ff.bv_fallback_limit=1']).strip() == 'sat'
+    assert run(z3, '(declare-const n Int)(assert (> n 2))(check-sat)',
+               ['smt.ff.bv_fallback_limit=1']).strip() == 'sat'
+    # A declined scoped problem must not prevent later checks after pop.
+    scoped = """(set-logic ALL)
+(push)
+(declare-const x (_ FiniteField 7))
+(assert (= (ff.mul x x) #f2m7))
+(check-sat-using smt)
+(pop)
+(assert false)
+(check-sat-using smt)
+"""
+    assert run(z3, scoped, ['smt.ff.max_steps=0',
+               'smt.ff.bv_fallback_limit=1']).split() == ['unknown', 'unsat']
+    # Large widths and n-ary multiplication must decline without expanding
+    # a multiplier; the model x=y=z=1 is a SAT control for both formulas.
+    prime = 170141183460469231731687303715884105727
+    for product in ['(ff.mul x y)', '(ff.mul x y z x y z)']:
+        wide = f"""(declare-const x (_ FiniteField {prime}))
+(declare-const y (_ FiniteField {prime}))
+(declare-const z (_ FiniteField {prime}))
+(assert (= {product} #f1m{prime}))
+(check-sat-using smt)
+"""
+        assert run(z3, wide, ['smt.ff.max_steps=0',
+                   'smt.ff.bv_fallback_limit=1']).strip() == 'unknown'
     mixed = """(declare-const x (_ FiniteField 7))
 (declare-fun f ((_ FiniteField 7)) Int)
 (assert (= (ff.mul x x) #f1m7))

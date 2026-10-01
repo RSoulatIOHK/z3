@@ -41,10 +41,54 @@ can be supplied with `--archives DIR` (`carcara.tar.gz`, `ffpacheck.tar.gz`).
 See [the checker trust boundary](proof_checkers/README.md) for required input
 binding and why raw external-checker acceptance alone is insufficient.
 
-Proof suites exercise independent DAG/Alethe replay, original-input binding,
-external literal and Boolean pipelines, tampered/truncated/wrong-input rejection,
+The proof suites include native wire-elimination and forced-F4 derivations and exhaustive small-field
+oracles, independent DAG/Alethe replay, original-input binding,
+external literal and Boolean pipelines, native SAT clause replay, tampered/truncated/wrong-input rejection,
 and resource recovery. Missing checkers are an error, not a skipped pass.
 Use `--suite all` to combine core and proof selections.
+
+The artifact pipeline replays the polynomial DAG while exporting PAC and
+releases each polynomial after its last reference. Its two-million weighted
+term storage bound applies to live values, including normalized inputs;
+cumulative arithmetic work and output-size bounds still apply. The legacy
+standalone replay can retain all values for callers that need them. Tests cover
+both modes, repeated operands, non-final roots, dead malformed nodes, unchanged
+PAC output, and original-input mismatch. Producer compaction validates structure
+without repeating algebraic replay: the complete bundle is checked before
+publication, then checked afresh from its stored original input by the bundle
+checker. A corruption regression verifies that this boundary cannot publish a
+false producer result. PAC export also combines single-use chains into existing
+linear-combination inferences, retaining shared intermediate polynomials.
+External-checker regressions cover cancellation to zero, repeated references,
+and roots preceding unused nodes. Carcara and FFPacheck remain required
+acceptance steps.
+
+The optional `--boolean-backend ranges` pipeline mode seeds native SAT search
+with certified bit-domain, complement, product, zero-test and bounded-sum lemmas.
+It requires `--backend native`. Partial sums are fresh definitions, whose
+identities are justified by Alethe `refl`; all arithmetic implications carry
+ordinary PAC certificates and keep their original equality premises. No-wrap
+zero propagation requires the sum's upper bound to be strictly below the field
+modulus. Matching proposes lemmas; it never makes them trusted assumptions.
+The JSON certificate uses schema version 3 to reconstruct these definitions
+from the original input, while existing version-2 bundles remain supported.
+`test_ff_range_proof.py` checks renamed/reordered circuits, complemented outputs,
+small-field wraparound SAT counterexamples, conditional constraints, and proof
+corruptions through the independent binding checker, FFPacheck and Carcara.
+
+The optional `--boolean-backend circuits` mode extends `ranges` with bounded
+recognition of mux (`b + s*(a-b)`), XOR (`a+b-2*a*b`) and product identities.
+It expands at most a small local wire cone, keeps every defining equality as a
+premise, and propagates the proved bit facts into downstream gates and sums.
+Each local truth table has at most three inputs and is certified with existing
+PAC rules. Matching uses memoization for shared arithmetic DAGs and declines
+unsupported expressions; it does not enumerate complete circuit assignments.
+Schema version 4 binds the extra definitions and lemmas to the original input;
+versions 2 and 3 retain their existing reconstruction. The new regression suite
+covers split wires, signed intermediates, reordered sums, small and large fields,
+a satisfying near-match that invalidates the mux identity, and shared DAGs.
+The native solver, resource budgets, automatic backend policy and external
+checker requirements are unchanged.
 
 Every invocation requires a new output directory and writes per-suite logs plus
 `summary.json`, including commands, statuses, timings and the selected build.

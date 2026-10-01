@@ -101,6 +101,26 @@ def main():
             dag = pp.run([args.z3, '-in'], 10, normalized + '(ff-certify)\n')['stdout']
             assert 'ff-certificate-unavailable' in dag
             reject(lambda: pp.export_artifact(text, dag)); rejected += 1
+        # PAC compaction must preserve sharing, cancellation to zero, and a
+        # non-final root. Check both encodings with the actual external checker.
+        for p in [2, 7, LARGE]:
+            # PAC requires variables to occur in its input axioms.
+            text = source(p, '(assert (= (as ff1 F) (as ff0 F)))\n(assert (= (ff.mul x y) (as ff0 F)))')
+            nodes = [['input','0'], ['mul','0','1',['0','1']],
+                     ['mul','1',str(p-1),[]], ['add','1','2'],
+                     ['add','3','0'], ['add','3','4'], ['mul','5','1',[]]]
+            raw = pp.fc.sexpr(['ff-certificate', ':version','1', ':modulus',str(p),
+                              ':variables',['x','y'], ':inputs',[[['1']],[['1','0','1']]],
+                              ':nodes',nodes, ':root','5'])
+            _, compact = pp.verified_pac(pp.fc.Problem(text), raw)
+            _, plain = pp.verified_pac(pp.fc.Problem(text), raw, compact=False)
+            assert len(compact) < len(plain)
+            for value in [compact, plain]:
+                path = root / 'composition.pac'; path.write_text(value)
+                pp.run([args.ffpacheck, str(path)], 10)
+            rejected_input = text.replace('ff1 F', 'ff0 F')
+            reject(lambda: pp.verified_pac(pp.fc.Problem(rejected_input), raw))
+            rejected += 1
         # Real external negative checks: missing contradiction and false arithmetic.
         for pac in ['', 'm 7;\na 1 v1;\n', 'm 7;\na 1 v1;\nl 2 1*(1), 1;\nunsat\n']:
             path = root / 'bad.pac'; path.write_text(pac)
@@ -121,6 +141,31 @@ def main():
         (last / 'proof.alethe').write_text(original)
         # Deadline enforcement is part of the pipeline contract.
         reject(lambda: pp.run([sys.executable, '-c', 'import time; time.sleep(30)'], 0.1)); rejected += 1
+        # The completion notification must keep both process reaping and the
+        # original deadline/output bounds, including immediate process failure.
+        import threading
+        import os
+        active = {t.ident for t in threading.enumerate()}
+        for _ in range(20):
+            result = pp.run([sys.executable, '-c', "print('ready')"], 5)
+            assert result['stdout'].strip() == 'ready'
+        assert {t.ident for t in threading.enumerate()} == active
+        reject(lambda: pp.run([sys.executable, '-c', 'raise SystemExit(3)'], 5)); rejected += 1
+        old_limit = pp.LIMIT
+        try:
+            pp.LIMIT = 1024
+            for fd in [1, 2]:
+                reject(lambda: pp.run([sys.executable, '-c', f'import os; os.write({fd}, b"x"*4096)'], 5))
+                rejected += 1
+        finally: pp.LIMIT = old_limit
+        pid_file = root/'timeout.pid'
+        reject(lambda: pp.run([sys.executable, '-c',
+            'import os,sys,time; open(sys.argv[1],"w").write(str(os.getpid())); time.sleep(30)', str(pid_file)], .2))
+        if pid_file.exists():
+            try: os.kill(int(pid_file.read_text()), 0)
+            except ProcessLookupError: pass
+            else: raise AssertionError('timed-out child was not reaped')
+        rejected += 1
     print(json.dumps(dict(externally_checked=checked, rejected=rejected,
                           carcara_unbound_pac_reproduced=True)))
 
