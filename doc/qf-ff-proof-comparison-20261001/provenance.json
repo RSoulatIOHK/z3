@@ -1,0 +1,255 @@
+{
+  "published-pr2": {
+    "archive": "fmcad-proof-20260929-pr2-1920788dc/runs/runs.jsonl",
+    "sha256": "a8852e9b35648041cd578b903d98c3055bda6b340debe2d8d473972d1c564283"
+  },
+  "local-circuits": {
+    "archive": "qf-ff-circuit-completion-20260930/validation-runs.jsonl",
+    "sha256": "959e2c2c6f3bb7a5eadd2e08fd6541b8a9fe76b40e83ebeeb01f10d2490866ae"
+  },
+  "published_metadata": {
+    "timeout": 10.0,
+    "jobs": 4,
+    "memory_mib": 16384,
+    "memory": "worker plus descendant RSS sampled every 50 ms; overshoot possible",
+    "timing": "whole worker wall time including process startup, production and checking",
+    "members": 408,
+    "distinct": 390,
+    "configurations": [
+      {
+        "id": "z3-pr2-1920788dc",
+        "kind": "z3-proof",
+        "command": [
+          "/private/tmp/fmcad-proof-latest-20260929/binaries/z3-pr2"
+        ],
+        "certificate_backend": "auto"
+      },
+      {
+        "id": "cvc5-fmcad-candidate",
+        "kind": "cvc5-proof",
+        "command": [
+          "/private/tmp/fmcad-proof-latest-20260929/binaries/cvc5-paper",
+          "--lang=smt2",
+          "--simplification=none",
+          "--dump-proofs",
+          "--proof-format-mode=alethe",
+          "--ff-proof-pac",
+          "--produce-proofs",
+          "--proof-granularity=dsl-rewrite"
+        ],
+        "checker_args": [
+          "--allow-int-real-subtyping",
+          "--rare-file",
+          "/private/tmp/fmcad-proof-latest-20260929/provenance/rewrites.eo"
+        ]
+      }
+    ],
+    "binaries": {
+      "z3-pr2-1920788dc": {
+        "path": "/private/tmp/fmcad-proof-latest-20260929/binaries/z3-pr2",
+        "sha256": "01d9080e6cab16457d06262ac52707bbb671d55b14556e660502ade43080e7c5"
+      },
+      "cvc5-fmcad-candidate": {
+        "path": "/private/tmp/fmcad-proof-latest-20260929/binaries/cvc5-paper",
+        "sha256": "336c22eeed5dbbb2d925fc39054f6c84898d9428902dc8e5c259c4aa7538ee53"
+      }
+    },
+    "checkers": {
+      "carcara": {
+        "path": "/private/tmp/fmcad-proof-latest-20260929/binaries/carcara",
+        "sha256": "b3108a328ada1133bf7480540779032581a3a16be2b283715bdded4125816105"
+      },
+      "ffpacheck": {
+        "path": "/private/tmp/fmcad-proof-latest-20260929/binaries/ffpacheck",
+        "sha256": "8a7e9a31d9287a0b9266395b6c3b819da8545a2241b540e77451af33cc1948be"
+      }
+    },
+    "python": "3.12.12 (main, Oct  9 2025, 11:07:00) [Clang 17.0.0 (clang-1700.0.13.3)]",
+    "runner_sha256": "1b11c9835d3daacd0b8f284033a604229598dfc2e87f8707aab79f55d2d1251e",
+    "pipeline_sha256": {
+      "ff_certificate.py": "7a860898d5f3a98c54729e79fa80f55d6d1614acd98f4fc2092ae36dc48a0168",
+      "ff_boolean_proof.py": "793622570beef651fcc7ff5abb28abd3b580e5412acaf91c7bccb7e4740766fd",
+      "ff_proof_pipeline.py": "d58b72d38c84a7c025da245d6b8d262b6ae1778f0c0240fbd73ac6840e700bf0"
+    }
+  },
+  "local_metadata": [
+    {
+      "timeout": 10.0,
+      "jobs": 4,
+      "memory_mib": 16384,
+      "memory": "worker plus descendant RSS sampled every 50 ms; overshoot possible",
+      "timing": "whole worker wall time including process startup, production and checking",
+      "members": 104,
+      "distinct": 100,
+      "configurations": [
+        {
+          "id": "final",
+          "kind": "z3-proof",
+          "command": [
+            "/private/tmp/ff-proof-frontier-20260930/retained/z3"
+          ],
+          "scripts": "/private/tmp/ff-circuit-completion-20260930/final/scripts",
+          "certificate_backend": "native",
+          "boolean_backend": "circuits"
+        }
+      ],
+      "binaries": {
+        "final": {
+          "path": "/private/tmp/ff-proof-frontier-20260930/retained/z3",
+          "sha256": "9ab2ac4a763881494a443b02e9c1c714a1a75cb93f155c7da34af17564f3dd4c"
+        }
+      },
+      "checkers": {
+        "carcara": {
+          "path": "/private/tmp/fmcad-proof-latest-20260929/binaries/carcara",
+          "sha256": "b3108a328ada1133bf7480540779032581a3a16be2b283715bdded4125816105"
+        },
+        "ffpacheck": {
+          "path": "/private/tmp/fmcad-proof-latest-20260929/binaries/ffpacheck",
+          "sha256": "8a7e9a31d9287a0b9266395b6c3b819da8545a2241b540e77451af33cc1948be"
+        }
+      },
+      "python": "3.12.12 (main, Oct  9 2025, 11:07:00) [Clang 17.0.0 (clang-1700.0.13.3)]",
+      "runner_sha256": "2a0bb4ced95a0713a85ce7e74f1dba34acd99626e3ee198055816feff96c25e6",
+      "pipeline_sha256": {
+        "ff_certificate.py": "f407434e934dd57abd7860cb41ed8f249a22d7ee1c561c34a3d5a30c6dc27c92",
+        "ff_boolean_proof.py": "9c4a160e5fafa3fd6986d092c5122febbef75c5b7d66d3d6f57628127228af29",
+        "ff_proof_pipeline.py": "27648507d83175180b1a73d68424015dd8bab840c708f19a92f224efc093e524"
+      }
+    },
+    {
+      "timeout": 10.0,
+      "jobs": 4,
+      "memory_mib": 16384,
+      "memory": "worker plus descendant RSS sampled every 50 ms; overshoot possible",
+      "timing": "whole worker wall time including process startup, production and checking",
+      "members": 106,
+      "distinct": 100,
+      "configurations": [
+        {
+          "id": "final",
+          "kind": "z3-proof",
+          "command": [
+            "/private/tmp/ff-proof-frontier-20260930/retained/z3"
+          ],
+          "scripts": "/private/tmp/ff-circuit-completion-20260930/final/scripts",
+          "certificate_backend": "native",
+          "boolean_backend": "circuits"
+        }
+      ],
+      "binaries": {
+        "final": {
+          "path": "/private/tmp/ff-proof-frontier-20260930/retained/z3",
+          "sha256": "9ab2ac4a763881494a443b02e9c1c714a1a75cb93f155c7da34af17564f3dd4c"
+        }
+      },
+      "checkers": {
+        "carcara": {
+          "path": "/private/tmp/fmcad-proof-latest-20260929/binaries/carcara",
+          "sha256": "b3108a328ada1133bf7480540779032581a3a16be2b283715bdded4125816105"
+        },
+        "ffpacheck": {
+          "path": "/private/tmp/fmcad-proof-latest-20260929/binaries/ffpacheck",
+          "sha256": "8a7e9a31d9287a0b9266395b6c3b819da8545a2241b540e77451af33cc1948be"
+        }
+      },
+      "python": "3.12.12 (main, Oct  9 2025, 11:07:00) [Clang 17.0.0 (clang-1700.0.13.3)]",
+      "runner_sha256": "2a0bb4ced95a0713a85ce7e74f1dba34acd99626e3ee198055816feff96c25e6",
+      "pipeline_sha256": {
+        "ff_certificate.py": "f407434e934dd57abd7860cb41ed8f249a22d7ee1c561c34a3d5a30c6dc27c92",
+        "ff_boolean_proof.py": "9c4a160e5fafa3fd6986d092c5122febbef75c5b7d66d3d6f57628127228af29",
+        "ff_proof_pipeline.py": "27648507d83175180b1a73d68424015dd8bab840c708f19a92f224efc093e524"
+      }
+    },
+    {
+      "timeout": 10.0,
+      "jobs": 4,
+      "memory_mib": 16384,
+      "memory": "worker plus descendant RSS sampled every 50 ms; overshoot possible",
+      "timing": "whole worker wall time including process startup, production and checking",
+      "members": 105,
+      "distinct": 100,
+      "configurations": [
+        {
+          "id": "final",
+          "kind": "z3-proof",
+          "command": [
+            "/private/tmp/ff-proof-frontier-20260930/retained/z3"
+          ],
+          "scripts": "/private/tmp/ff-circuit-completion-20260930/final/scripts",
+          "certificate_backend": "native",
+          "boolean_backend": "circuits"
+        }
+      ],
+      "binaries": {
+        "final": {
+          "path": "/private/tmp/ff-proof-frontier-20260930/retained/z3",
+          "sha256": "9ab2ac4a763881494a443b02e9c1c714a1a75cb93f155c7da34af17564f3dd4c"
+        }
+      },
+      "checkers": {
+        "carcara": {
+          "path": "/private/tmp/fmcad-proof-latest-20260929/binaries/carcara",
+          "sha256": "b3108a328ada1133bf7480540779032581a3a16be2b283715bdded4125816105"
+        },
+        "ffpacheck": {
+          "path": "/private/tmp/fmcad-proof-latest-20260929/binaries/ffpacheck",
+          "sha256": "8a7e9a31d9287a0b9266395b6c3b819da8545a2241b540e77451af33cc1948be"
+        }
+      },
+      "python": "3.12.12 (main, Oct  9 2025, 11:07:00) [Clang 17.0.0 (clang-1700.0.13.3)]",
+      "runner_sha256": "2a0bb4ced95a0713a85ce7e74f1dba34acd99626e3ee198055816feff96c25e6",
+      "pipeline_sha256": {
+        "ff_certificate.py": "f407434e934dd57abd7860cb41ed8f249a22d7ee1c561c34a3d5a30c6dc27c92",
+        "ff_boolean_proof.py": "9c4a160e5fafa3fd6986d092c5122febbef75c5b7d66d3d6f57628127228af29",
+        "ff_proof_pipeline.py": "27648507d83175180b1a73d68424015dd8bab840c708f19a92f224efc093e524"
+      }
+    },
+    {
+      "timeout": 10.0,
+      "jobs": 4,
+      "memory_mib": 16384,
+      "memory": "worker plus descendant RSS sampled every 50 ms; overshoot possible",
+      "timing": "whole worker wall time including process startup, production and checking",
+      "members": 93,
+      "distinct": 90,
+      "configurations": [
+        {
+          "id": "final",
+          "kind": "z3-proof",
+          "command": [
+            "/private/tmp/ff-proof-frontier-20260930/retained/z3"
+          ],
+          "scripts": "/private/tmp/ff-circuit-completion-20260930/final/scripts",
+          "certificate_backend": "native",
+          "boolean_backend": "circuits"
+        }
+      ],
+      "binaries": {
+        "final": {
+          "path": "/private/tmp/ff-proof-frontier-20260930/retained/z3",
+          "sha256": "9ab2ac4a763881494a443b02e9c1c714a1a75cb93f155c7da34af17564f3dd4c"
+        }
+      },
+      "checkers": {
+        "carcara": {
+          "path": "/private/tmp/fmcad-proof-latest-20260929/binaries/carcara",
+          "sha256": "b3108a328ada1133bf7480540779032581a3a16be2b283715bdded4125816105"
+        },
+        "ffpacheck": {
+          "path": "/private/tmp/fmcad-proof-latest-20260929/binaries/ffpacheck",
+          "sha256": "8a7e9a31d9287a0b9266395b6c3b819da8545a2241b540e77451af33cc1948be"
+        }
+      },
+      "python": "3.12.12 (main, Oct  9 2025, 11:07:00) [Clang 17.0.0 (clang-1700.0.13.3)]",
+      "runner_sha256": "2a0bb4ced95a0713a85ce7e74f1dba34acd99626e3ee198055816feff96c25e6",
+      "pipeline_sha256": {
+        "ff_certificate.py": "f407434e934dd57abd7860cb41ed8f249a22d7ee1c561c34a3d5a30c6dc27c92",
+        "ff_boolean_proof.py": "9c4a160e5fafa3fd6986d092c5122febbef75c5b7d66d3d6f57628127228af29",
+        "ff_proof_pipeline.py": "27648507d83175180b1a73d68424015dd8bab840c708f19a92f224efc093e524"
+      }
+    }
+  ],
+  "local_source_commit": "c305dec74f594444c82d036610dc81b119b9090d",
+  "local_is_published_to_pr2": false
+}

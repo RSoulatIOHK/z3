@@ -1,0 +1,52 @@
+# Fresh FMCAD solver comparison — 2026-09-29
+
+Exact published PR1 head `ad6cb81c19ad9d5d46e53718598e8652c93b413c`, rebased on upstream `65dc54257`. Latest cvc5 main is pinned to `afabed488b81710676fa81df408989d550779988`; cvc5 1.4.1 is also included.
+
+## Protocol
+
+The public FMCAD 2026 artifact is https://zenodo.org/records/20133205. Its selected list contains 408 paths, deduplicated to 390 SHA-256-verified original inputs; 10 seconds whole-worker wall time per input/configuration, four workers, deterministic shuffle, 16 GiB sampled process-tree RSS cap. The prior FMCAD runner is reused. Its repository-root path was adjusted, and a receipt-reading fix was applied after an interrupted worker left truncated JSON: all 2,247 completed measurements were preserved, one incomplete attempt was archived and retried, and the remaining 2,043 runs resumed. See `resume-audit.json` for exact runner hashes and the affected input. No completed measurement was replaced. All displayed results are fresh runs in one campaign. Python startup and solver startup are included. The source corpus and solver flags are unchanged. No Lean-SMT or proof-production runs are included. Timing is a concurrent throughput screen on a non-reserved host, not an isolated latency measurement.
+
+Latest main was built natively with CoCoA, production optimization, GMP and static linking; unrelated LibPoly support is disabled. Release builds use their packaged arithmetic dependencies. Executable SHA-256 hashes, exact versions, configurations and source/build provenance are archived. The initial smoke test of non-GPL binaries lacked CoCoA and is excluded.
+
+| Configuration | UNSAT / 390 | Paths / 408 | Median successful wall time |
+|---|---:|---:|---:|
+| Z3+FF PR1 ad6cb81c1 | 390 | 408 | 0.296 s |
+| cvc5 1.3.3, no simplification | 368 | 386 | 0.318 s |
+| cvc5 1.4.0 GB | 362 | 380 | 0.321 s |
+| cvc5 1.4.0 split | 326 | 344 | 0.323 s |
+| cvc5 main 72f647e GB | 365 | 383 | 0.310 s |
+| cvc5 main 72f647e split | 333 | 351 | 0.322 s |
+| cvc5 1.4.1 GB | 362 | 380 | 0.307 s |
+| cvc5 1.4.1 split | 326 | 344 | 0.311 s |
+| cvc5 main afabed4 GB | 365 | 383 | 0.319 s |
+| cvc5 main afabed4 split | 334 | 352 | 0.313 s |
+| cvc5 1.3.4.dev FMCAD candidate, no simplification | 367 | 385 | 0.328 s |
+
+## Pairwise coverage against Z3+FF
+
+| Competitor | Both solve | Z3 only | Competitor only | Neither |
+|---|---:|---:|---:|---:|
+| cvc5 1.3.3, no simplification | 368 | 22 | 0 | 0 |
+| cvc5 1.4.0 GB | 362 | 28 | 0 | 0 |
+| cvc5 1.4.0 split | 326 | 64 | 0 | 0 |
+| cvc5 main 72f647e GB | 365 | 25 | 0 | 0 |
+| cvc5 main 72f647e split | 333 | 57 | 0 | 0 |
+| cvc5 1.4.1 GB | 362 | 28 | 0 | 0 |
+| cvc5 1.4.1 split | 326 | 64 | 0 | 0 |
+| cvc5 main afabed4 GB | 365 | 25 | 0 | 0 |
+| cvc5 main afabed4 split | 334 | 56 | 0 | 0 |
+| cvc5 1.3.4.dev FMCAD candidate, no simplification | 367 | 23 | 0 | 0 |
+
+![Solving cactus](solving-cactus.png)
+
+![Coverage](coverage.png)
+
+The cactus and pairwise table count 390 unique inputs. The category heatmap counts all 408 artifact paths: duplicates can belong to multiple categories, and their single measured result is reused for each path.
+
+## Interpretation
+
+The corpus is the artifact's UNSAT selection: counts measure completed UNSAT answers, not independently checked certificates. The known cvc5 split false-UNSAT issue on a different satisfiable input is not adjudicated by this corpus. SAT answers, errors and resource exhaustion are reported separately in `summary.json`, never counted as successes. Historical results are not substituted for fresh measurements.
+
+The mixed array/sequence examples are a separate generated functional check; they do not enter this timing corpus. See `mixed-examples/README.md`.
+
+Full per-input results: `per-input.csv`. Shared/exclusive successes: `overlap.json`. Raw solver output, exit statuses, timings and resource receipts: `runs/`.

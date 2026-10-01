@@ -1,0 +1,167 @@
+{
+  "timeout": 10.0,
+  "jobs": 4,
+  "memory_mib": 16384,
+  "memory": "worker plus descendant RSS sampled every 50 ms; overshoot possible",
+  "timing": "whole worker wall time including process startup, production and checking",
+  "members": 408,
+  "distinct": 390,
+  "configurations": [
+    {
+      "id": "z3-pr1-ad6cb81c1",
+      "kind": "solve",
+      "command": [
+        "/private/tmp/fmcad-latest-20260929/binaries/z3-pr1"
+      ]
+    },
+    {
+      "id": "cvc5-1.3.3-nosimp",
+      "kind": "solve",
+      "command": [
+        "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.3.3",
+        "--lang=smt2",
+        "--simplification=none"
+      ]
+    },
+    {
+      "id": "cvc5-1.4.0-gb",
+      "kind": "solve",
+      "command": [
+        "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.4.0",
+        "--lang=smt2"
+      ]
+    },
+    {
+      "id": "cvc5-1.4.0-split",
+      "kind": "solve",
+      "command": [
+        "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.4.0",
+        "--lang=smt2",
+        "--ff-solver=split"
+      ]
+    },
+    {
+      "id": "cvc5-main-72f647e-gb",
+      "kind": "solve",
+      "command": [
+        "/private/tmp/fmcad-latest-20260929/binaries/cvc5-main-72f647e",
+        "--lang=smt2"
+      ]
+    },
+    {
+      "id": "cvc5-main-72f647e-split",
+      "kind": "solve",
+      "command": [
+        "/private/tmp/fmcad-latest-20260929/binaries/cvc5-main-72f647e",
+        "--lang=smt2",
+        "--ff-solver=split"
+      ]
+    },
+    {
+      "id": "cvc5-1.4.1-gb",
+      "kind": "solve",
+      "command": [
+        "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.4.1",
+        "--lang=smt2"
+      ]
+    },
+    {
+      "id": "cvc5-1.4.1-split",
+      "kind": "solve",
+      "command": [
+        "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.4.1",
+        "--lang=smt2",
+        "--ff-solver=split"
+      ]
+    },
+    {
+      "id": "cvc5-main-afabed4-gb",
+      "kind": "solve",
+      "command": [
+        "/private/tmp/fmcad-latest-20260929/binaries/cvc5-main-afabed4",
+        "--lang=smt2"
+      ]
+    },
+    {
+      "id": "cvc5-main-afabed4-split",
+      "kind": "solve",
+      "command": [
+        "/private/tmp/fmcad-latest-20260929/binaries/cvc5-main-afabed4",
+        "--lang=smt2",
+        "--ff-solver=split"
+      ]
+    },
+    {
+      "id": "cvc5-paper-nosimp",
+      "kind": "solve",
+      "command": [
+        "/private/tmp/fmcad-latest-20260929/binaries/cvc5-paper",
+        "--lang=smt2",
+        "--simplification=none"
+      ]
+    }
+  ],
+  "binaries": {
+    "z3-pr1-ad6cb81c1": {
+      "path": "/private/tmp/fmcad-latest-20260929/binaries/z3-pr1",
+      "sha256": "dc7d13549a717af6c25abc6c1106bb422526e51eb2616c2b90188c7e67836882"
+    },
+    "cvc5-1.3.3-nosimp": {
+      "path": "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.3.3",
+      "sha256": "1a4a2001012ff80a6ffc6a1a090e72d7283fe4de39b62cd65cc088dde12cbaa6"
+    },
+    "cvc5-1.4.0-gb": {
+      "path": "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.4.0",
+      "sha256": "bda43ec593d7f8e0d48e356a384e80a2dc2234e797a4c57845d9d64e9ff48048"
+    },
+    "cvc5-1.4.0-split": {
+      "path": "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.4.0",
+      "sha256": "bda43ec593d7f8e0d48e356a384e80a2dc2234e797a4c57845d9d64e9ff48048"
+    },
+    "cvc5-main-72f647e-gb": {
+      "path": "/private/tmp/fmcad-latest-20260929/binaries/cvc5-main-72f647e",
+      "sha256": "bc089097beaa938e11ccf291e4bc41ba4b32ee2e6dcec66d5648c389f4adc7eb"
+    },
+    "cvc5-main-72f647e-split": {
+      "path": "/private/tmp/fmcad-latest-20260929/binaries/cvc5-main-72f647e",
+      "sha256": "bc089097beaa938e11ccf291e4bc41ba4b32ee2e6dcec66d5648c389f4adc7eb"
+    },
+    "cvc5-1.4.1-gb": {
+      "path": "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.4.1",
+      "sha256": "aae222cf6a86bdaa18df0b57b46726e68362ca25118577a99da6f46fb82ed0c1"
+    },
+    "cvc5-1.4.1-split": {
+      "path": "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.4.1",
+      "sha256": "aae222cf6a86bdaa18df0b57b46726e68362ca25118577a99da6f46fb82ed0c1"
+    },
+    "cvc5-main-afabed4-gb": {
+      "path": "/private/tmp/fmcad-latest-20260929/binaries/cvc5-main-afabed4",
+      "sha256": "ec558de980db36b838eb4b657bb2a087873606d1041aa434c3a459b4396784d8"
+    },
+    "cvc5-main-afabed4-split": {
+      "path": "/private/tmp/fmcad-latest-20260929/binaries/cvc5-main-afabed4",
+      "sha256": "ec558de980db36b838eb4b657bb2a087873606d1041aa434c3a459b4396784d8"
+    },
+    "cvc5-paper-nosimp": {
+      "path": "/private/tmp/fmcad-latest-20260929/binaries/cvc5-paper",
+      "sha256": "336c22eeed5dbbb2d925fc39054f6c84898d9428902dc8e5c259c4aa7538ee53"
+    }
+  },
+  "checkers": {
+    "carcara": {
+      "path": "/private/tmp/ff-ci-checkers/carcara",
+      "sha256": "b3108a328ada1133bf7480540779032581a3a16be2b283715bdded4125816105"
+    },
+    "ffpacheck": {
+      "path": "/private/tmp/ff-ci-checkers/ffpacheck",
+      "sha256": "8a7e9a31d9287a0b9266395b6c3b819da8545a2241b540e77451af33cc1948be"
+    }
+  },
+  "python": "3.12.12 (main, Oct  9 2025, 11:07:00) [Clang 17.0.0 (clang-1700.0.13.3)]",
+  "runner_sha256": "17d8ad5834ccfd21095d24a02a67afe5e84179dd4d79c14086bf91135197982a",
+  "pipeline_sha256": {
+    "ff_certificate.py": "7a860898d5f3a98c54729e79fa80f55d6d1614acd98f4fc2092ae36dc48a0168",
+    "ff_boolean_proof.py": "793622570beef651fcc7ff5abb28abd3b580e5412acaf91c7bccb7e4740766fd",
+    "ff_proof_pipeline.py": "d58b72d38c84a7c025da245d6b8d262b6ae1778f0c0240fbd73ac6840e700bf0"
+  }
+}

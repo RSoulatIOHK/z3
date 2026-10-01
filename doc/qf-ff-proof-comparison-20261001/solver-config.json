@@ -1,0 +1,95 @@
+[
+  {
+    "id": "z3-pr1-ad6cb81c1",
+    "kind": "solve",
+    "command": [
+      "/private/tmp/fmcad-latest-20260929/binaries/z3-pr1"
+    ]
+  },
+  {
+    "id": "cvc5-1.3.3-nosimp",
+    "kind": "solve",
+    "command": [
+      "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.3.3",
+      "--lang=smt2",
+      "--simplification=none"
+    ]
+  },
+  {
+    "id": "cvc5-1.4.0-gb",
+    "kind": "solve",
+    "command": [
+      "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.4.0",
+      "--lang=smt2"
+    ]
+  },
+  {
+    "id": "cvc5-1.4.0-split",
+    "kind": "solve",
+    "command": [
+      "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.4.0",
+      "--lang=smt2",
+      "--ff-solver=split"
+    ]
+  },
+  {
+    "id": "cvc5-main-72f647e-gb",
+    "kind": "solve",
+    "command": [
+      "/private/tmp/fmcad-latest-20260929/binaries/cvc5-main-72f647e",
+      "--lang=smt2"
+    ]
+  },
+  {
+    "id": "cvc5-main-72f647e-split",
+    "kind": "solve",
+    "command": [
+      "/private/tmp/fmcad-latest-20260929/binaries/cvc5-main-72f647e",
+      "--lang=smt2",
+      "--ff-solver=split"
+    ]
+  },
+  {
+    "id": "cvc5-1.4.1-gb",
+    "kind": "solve",
+    "command": [
+      "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.4.1",
+      "--lang=smt2"
+    ]
+  },
+  {
+    "id": "cvc5-1.4.1-split",
+    "kind": "solve",
+    "command": [
+      "/private/tmp/fmcad-latest-20260929/binaries/cvc5-1.4.1",
+      "--lang=smt2",
+      "--ff-solver=split"
+    ]
+  },
+  {
+    "id": "cvc5-main-afabed4-gb",
+    "kind": "solve",
+    "command": [
+      "/private/tmp/fmcad-latest-20260929/binaries/cvc5-main-afabed4",
+      "--lang=smt2"
+    ]
+  },
+  {
+    "id": "cvc5-main-afabed4-split",
+    "kind": "solve",
+    "command": [
+      "/private/tmp/fmcad-latest-20260929/binaries/cvc5-main-afabed4",
+      "--lang=smt2",
+      "--ff-solver=split"
+    ]
+  },
+  {
+    "id": "cvc5-paper-nosimp",
+    "kind": "solve",
+    "command": [
+      "/private/tmp/fmcad-latest-20260929/binaries/cvc5-paper",
+      "--lang=smt2",
+      "--simplification=none"
+    ]
+  }
+]

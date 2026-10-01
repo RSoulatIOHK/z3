@@ -1,0 +1,104 @@
+{
+  "published-pr2": {
+    "produced": 356,
+    "checked": 355,
+    "statuses": {
+      "checked": 355,
+      "unavailable": 25,
+      "timeout": 10
+    }
+  },
+  "cvc5": {
+    "produced": 362,
+    "checked": 357,
+    "statuses": {
+      "checked": 357,
+      "timeout": 33
+    }
+  },
+  "local-circuits": {
+    "produced": 378,
+    "checked": 377,
+    "statuses": {
+      "checked": 377,
+      "timeout": 2,
+      "unavailable": 11
+    }
+  },
+  "overlap": {
+    "published-pr2": {
+      "both": 343,
+      "z3_only": 12,
+      "cvc5_only": 14,
+      "neither": 21
+    },
+    "local-circuits": {
+      "both": 355,
+      "z3_only": 22,
+      "cvc5_only": 2,
+      "neither": 11
+    }
+  },
+  "groups": [
+    {
+      "family": "circ",
+      "property": "deterministic",
+      "total": 47,
+      "checked": {
+        "published-pr2": 47,
+        "cvc5": 43,
+        "local-circuits": 47
+      }
+    },
+    {
+      "family": "circ",
+      "property": "sound",
+      "total": 58,
+      "checked": {
+        "published-pr2": 40,
+        "cvc5": 44,
+        "local-circuits": 50
+      }
+    },
+    {
+      "family": "zokcirc",
+      "property": "deterministic",
+      "total": 59,
+      "checked": {
+        "published-pr2": 51,
+        "cvc5": 58,
+        "local-circuits": 59
+      }
+    },
+    {
+      "family": "zokcirc",
+      "property": "sound",
+      "total": 65,
+      "checked": {
+        "published-pr2": 64,
+        "cvc5": 65,
+        "local-circuits": 65
+      }
+    },
+    {
+      "family": "zokref",
+      "property": "deterministic",
+      "total": 73,
+      "checked": {
+        "published-pr2": 65,
+        "cvc5": 59,
+        "local-circuits": 68
+      }
+    },
+    {
+      "family": "zokref",
+      "property": "sound",
+      "total": 88,
+      "checked": {
+        "published-pr2": 88,
+        "cvc5": 88,
+        "local-circuits": 88
+      }
+    }
+  ]
+}

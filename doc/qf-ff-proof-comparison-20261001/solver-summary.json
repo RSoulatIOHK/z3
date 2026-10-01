@@ -1,0 +1,100 @@
+{
+  "z3-pr1-ad6cb81c1": {
+    "statuses": {
+      "unsat": 390
+    },
+    "solved": 390,
+    "weighted_solved": 408,
+    "median_success_seconds": 0.2957744589948561
+  },
+  "cvc5-1.3.3-nosimp": {
+    "statuses": {
+      "unsat": 368,
+      "timeout": 22
+    },
+    "solved": 368,
+    "weighted_solved": 386,
+    "median_success_seconds": 0.31832724950800184
+  },
+  "cvc5-1.4.0-gb": {
+    "statuses": {
+      "timeout": 28,
+      "unsat": 362
+    },
+    "solved": 362,
+    "weighted_solved": 380,
+    "median_success_seconds": 0.32116510400373954
+  },
+  "cvc5-1.4.0-split": {
+    "statuses": {
+      "unsat": 326,
+      "timeout": 64
+    },
+    "solved": 326,
+    "weighted_solved": 344,
+    "median_success_seconds": 0.32252429200161714
+  },
+  "cvc5-main-72f647e-gb": {
+    "statuses": {
+      "unsat": 365,
+      "timeout": 25
+    },
+    "solved": 365,
+    "weighted_solved": 383,
+    "median_success_seconds": 0.30955166700005066
+  },
+  "cvc5-main-72f647e-split": {
+    "statuses": {
+      "unsat": 333,
+      "timeout": 57
+    },
+    "solved": 333,
+    "weighted_solved": 351,
+    "median_success_seconds": 0.3223745839932235
+  },
+  "cvc5-1.4.1-gb": {
+    "statuses": {
+      "unsat": 362,
+      "timeout": 28
+    },
+    "solved": 362,
+    "weighted_solved": 380,
+    "median_success_seconds": 0.30732725000416394
+  },
+  "cvc5-1.4.1-split": {
+    "statuses": {
+      "unsat": 326,
+      "timeout": 64
+    },
+    "solved": 326,
+    "weighted_solved": 344,
+    "median_success_seconds": 0.3114254165047896
+  },
+  "cvc5-main-afabed4-gb": {
+    "statuses": {
+      "unsat": 365,
+      "timeout": 25
+    },
+    "solved": 365,
+    "weighted_solved": 383,
+    "median_success_seconds": 0.31889570799830835
+  },
+  "cvc5-main-afabed4-split": {
+    "statuses": {
+      "unsat": 334,
+      "timeout": 56
+    },
+    "solved": 334,
+    "weighted_solved": 352,
+    "median_success_seconds": 0.3125929375019041
+  },
+  "cvc5-paper-nosimp": {
+    "statuses": {
+      "unsat": 367,
+      "timeout": 23
+    },
+    "solved": 367,
+    "weighted_solved": 385,
+    "median_success_seconds": 0.3280427919962676
+  }
+}

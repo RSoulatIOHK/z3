@@ -1,0 +1,68 @@
+Compound-circuit certificate experiments — 2026-09-30
+
+Outcome
+Final independent full sweep: 377/390 checked at 10 seconds per whole pipeline,
+4 workers. All 373 checked inputs from the previous frontier are retained.
+Four new Circ inputs checked 3/3 repeats; baseline checked 0/3 for each.
+Remaining: 13 inputs, comprising 8 Circ and 5 Zokref.
+
+Experiments
+1. Compound mux/XOR recognition across split wire definitions: +3 Circ cases.
+2. Propagation through nested compound expressions: +1 further Circ case.
+   Broader signed finite-domain decomposition was also implemented and tested;
+   it added no checked cases and was removed from the retained source.
+3. Local polynomial wire equalities, then a reduced unresolved-cone proof:
+   neither recovered any of the five remaining Zokref inputs. Both archived.
+4. Smaller PAC combinations with 16/64/256 expansion limits and additional
+   shared anchors: no new checked input in the targeted screen. Not retained.
+   A diagnostic profile spent about 5.17 seconds in standalone FFPacheck;
+   the subsequent Carcara stage was not measured because that profiling run
+   encountered a temporary storage failure. This partial diagnostic is not
+   counted as a valid benchmark measurement or certificate acceptance.
+
+Retained implementation
+Optional --boolean-backend circuits with --backend native. Schema version 4
+rebuilds candidate lemmas and definitions from the original input. Mux, XOR,
+AND and complement facts use small local truth tables, each certified with
+ordinary PAC rules. Signed wire regrouping retains its defining equalities as
+premises. Shared arithmetic DAG matching is memoized; unsupported deep forms
+are declined. No new trusted rule, increased budget or skipped checker.
+The existing automatic backend policy and explicit ranges mode are unchanged.
+
+Measurement contract
+FMCAD26 FF_UNSAT_SMT, 390 distinct inputs / 408 member paths. Deadline includes
+worker startup, production, independent replay, standalone FFPacheck, and
+Carcara invoking FFPacheck again. Frozen native binary is unchanged from the
+previous run. All source/binary/checker hashes and per-stage receipts retained.
+Full sweeps used four sequential batches of 100/100/100/90 inputs; each batch
+used four workers. Completed bundles were compressed and hash-verified between
+batches, outside measured runs, to bound disk usage.
+
+Timing variability
+Paired full run: baseline 371/390, candidate 375/390. Common 370 cases had a
+candidate/baseline geometric mean of 0.9776898232 (about 2.2% faster).
+The apparent paired regression, 6dc41c4a6f7b..., produced byte-identical JSON
+and Alethe certificates in both versions; candidate checked 3/3 repeats.
+The previously solved e9e36d2f7b8f... also fluctuated around the deadline.
+A separate full final-source validation then checked 377/390, including both
+of those controls. These are distinct campaigns; failed original rows were
+not overwritten or silently replaced by repeat results.
+Treat timing as comparable, not evidence of a precise 2.2% speedup.
+
+Validation
+Ten proof regression suites plus build binding identity: 11/11 pass.
+New cases cover split mux/XOR wires, reordered sums, signed intermediate
+values, small/large prime fields, a satisfying invalid-mux near-match,
+certificate corruptions, wrong reconstruction schema, and shared DAGs that
+would unfold exponentially without memoization. Existing modular-wrap and
+conditional-premise tests remain active.
+Memoization preserves the exact graph, definitions and candidate lemmas on
+all 390 artifact inputs compared with the paired timed prototype.
+1342 valid timed configurations across all screens, paired full comparison,
+repetitions and final validation; the interrupted diagnostic profile excluded.
+
+Publication
+Retained locally; no push requested or performed in this round.
+Research artifacts and rejected prototypes are kept outside the source tree.
+
+Retained local commit: c305dec74
