@@ -8,7 +8,7 @@ import numpy as np
 r=Path(__file__).parent
 rows=[json.loads(s) for s in (r/'measurements.jsonl').read_text().splitlines()]
 ids=['published-pr2','cvc5','local-circuits']
-labels=['Published PR2 · 1920788dc','cvc5 1.3.4.dev · FMCAD proof candidate','Z3+FF native/circuits · local c305dec74']
+labels=['Previous PR2 · 1920788dc','cvc5 1.3.4.dev · FMCAD proof candidate','Current PR2 · c305dec74 · native/circuits']
 colors=['#4878b0','#d68520','#298957']
 by={c:[x for x in rows if x['series']==c] for c in ids}
 inputs={x['sha256'] for x in by[ids[0]]}
@@ -34,7 +34,7 @@ for ax,production in zip(axs,[True,False]):
 axs[0].set_ylabel('Distinct inputs')
 fig.suptitle('FMCAD finite-field certificates — production and checking',fontsize=17)
 fig.text(.5,.072,'390 distinct inputs / 408 paths · 10 s per pipeline · 4 workers · macOS ARM64 · no Lean',ha='center',fontsize=10)
-fig.text(.5,.038,'Published PR2 + cvc5: September 29. Local follow-up: September 30; not yet in PR2. Separate campaigns.',ha='center',fontsize=9)
+fig.text(.5,.038,'Previous PR2 + cvc5: September 29. Current PR2: September 30. Separate campaigns.',ha='center',fontsize=9)
 fig.text(.5,.007,'Carcara + FFPacheck; Z3 additionally binds the original input and independently replays proofs. Checking contracts differ.',ha='center',fontsize=9)
 fig.tight_layout(rect=(0,.10,1,.95))
 for ext in ['png','pdf','svg']:fig.savefig(r/f'certificate-cactus.{ext}',dpi=170)
@@ -49,7 +49,7 @@ counts=np.array([[sum(group(x)==g and x['status']=='checked' for x in by[c]) for
 percent=100*counts/np.array(ns)[:,None]
 fig,(ax,bx)=plt.subplots(2,1,figsize=(12,8),gridspec_kw={'height_ratios':[3.4,1.35]})
 im=ax.imshow(percent,vmin=0,vmax=100,cmap='YlGn',aspect='auto')
-ax.set_xticks(range(3),['Published PR2\n1920788dc','cvc5 1.3.4.dev\nFMCAD candidate','Local Z3+FF follow-up\nc305dec74 · native/circuits'])
+ax.set_xticks(range(3),['Previous PR2\n1920788dc','cvc5 1.3.4.dev\nFMCAD candidate','Current PR2\nc305dec74 · native/circuits'])
 ax.set_yticks(range(6),[f'{f.title()} · {"determinism" if p=="deterministic" else "soundness"} (n={n})' for (f,p),n in zip(groups,ns)])
 for i in range(6):
  for j in range(3):
@@ -65,14 +65,18 @@ for part,label,color in zip(parts,partlabels,partcolors):
   if 0<n<5:bx.annotate(str(n),(l+n/2,y+.24),xytext=(l+n/2,y+.48),ha='center',va='center',fontsize=10,arrowprops={'arrowstyle':'-','color':'#444'})
   elif n:bx.text(l+n/2,y,str(n),ha='center',va='center',fontsize=10)
  left+=vals
-bx.set_yticks([1,0],['Published PR2 vs cvc5','Local follow-up vs cvc5']);bx.set(xlim=(0,390),xlabel='Distinct inputs (390 total)')
+bx.set_yticks([1,0],['Previous PR2 vs cvc5','Current PR2 vs cvc5']);bx.set(xlim=(0,390),xlabel='Distinct inputs (390 total)')
 bx.legend(ncol=4,loc='upper center',bbox_to_anchor=(.5,-.44),frameon=False,fontsize=10)
 fig.suptitle('FMCAD finite-field certificates — coverage and overlap',fontsize=17)
 fig.text(.5,.049,'10 s whole-pipeline deadline · 4 workers · separate September 29/30 campaigns; same 390 input hashes',ha='center',fontsize=9)
-fig.text(.5,.020,'Local c305dec74 is not yet in PR2. Checking contracts differ; no claim of Lean validation.',ha='center',fontsize=9)
+fig.text(.5,.020,'Current PR2 uses the optional native/circuits mode. Checking contracts differ; no Lean validation.',ha='center',fontsize=9)
 fig.tight_layout(rect=(0,.13,1,.95),h_pad=2)
 for ext in ['png','pdf','svg']:fig.savefig(r/f'certificate-coverage.{ext}',dpi=170)
 plt.close(fig)
 summary['groups']=[{'family':g[0],'property':g[1],'total':n,'checked':dict(zip(ids,map(int,cs)))} for g,n,cs in zip(groups,ns,counts)]
 (r/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
 print(json.dumps(summary,indent=2))
+
+# Keep generated vector files free of trailing whitespace.
+for p in r.glob("certificate-*.svg"):
+ p.write_text("\n".join(line.rstrip() for line in p.read_text().splitlines())+"\n")

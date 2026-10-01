@@ -251,5 +251,6 @@
     }
   ],
   "local_source_commit": "c305dec74f594444c82d036610dc81b119b9090d",
-  "local_is_published_to_pr2": false
+  "local_is_published_to_pr2": true,
+  "publication_date": "2026-10-01"
 }
