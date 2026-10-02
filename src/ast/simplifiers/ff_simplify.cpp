@@ -215,6 +215,7 @@ void ff_disjunctive_simplifier::reduce() {
 // Both equations are retained. The derived definition removes the arbitrary
 // inverse witness from z's dependencies, making duplicate tests congruent.
 void ff_zero_test_simplifier::reduce() {
+    unsigned original_tail = m_fmls.qtail();
     ff_util ff(m);
     // Associativity changes grouping, not the multiset of factors. Do not
     // memoize this traversal: repeated factors must retain multiplicity.
@@ -372,6 +373,22 @@ void ff_zero_test_simplifier::reduce() {
             break;
         }
     }
+    if (original_tail == m_fmls.qtail())
+        return;
+    // Wire elimination selects the first definition of each constant. Put
+    // the derived, witness-free indicator definitions before the original
+    // inverse-witness equations, or elimination expands through arbitrary
+    // witnesses and hides equality between duplicate zero tests.
+    // Conjunction is commutative: reorder only the active suffix, retaining
+    // both premises and every formula's proof/dependency references.
+    std::vector<dependent_expr> ordered;
+    ordered.reserve(m_fmls.qtail() - m_fmls.qhead());
+    for (unsigned i = original_tail; i < m_fmls.qtail(); ++i)
+        ordered.push_back(m_fmls[i]);
+    for (unsigned i = m_fmls.qhead(); i < original_tail; ++i)
+        ordered.push_back(m_fmls[i]);
+    for (unsigned i = 0; i < ordered.size(); ++i)
+        m_fmls.update(m_fmls.qhead() + i, ordered[i]);
 }
 
 void ff_zero_test_simplifier::collect_statistics(statistics &st) const { st.update("ff zero tests", m_added); }

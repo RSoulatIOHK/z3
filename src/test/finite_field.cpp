@@ -1018,7 +1018,7 @@ static void test_ff_nested_zero_test() {
                 ENSURE(state.qtail() == (complete ? 3u : 2u));
                 if (complete) {
                     ptr_vector<expr> premises;
-                    m.linearize(state[2].dep(), premises);
+                    m.linearize(state[0].dep(), premises);
                     ENSURE(premises.size() == 2 && premises.contains(guard) && premises.contains(definition));
                     // Independently ask the SMT context whether the premises
                     // admit a counterexample to the newly derived equality.
@@ -1026,7 +1026,7 @@ static void test_ff_nested_zero_test() {
                     smt::context context(m, params);
                     context.assert_expr(guard);
                     context.assert_expr(definition);
-                    expr_ref counterexample(m.mk_not(state[2].fml()), m);
+                    expr_ref counterexample(m.mk_not(state[0].fml()), m);
                     context.assert_expr(counterexample);
                     ENSURE(context.check() == l_false);
                 }
@@ -1035,7 +1035,58 @@ static void test_ff_nested_zero_test() {
     }
 }
 
+// Duplicate zero tests must collapse before algebraic solving, even when
+// their independent inverse witnesses occur in the original definitions first.
+static void test_ff_zero_test_wire_priority() {
+    ast_manager m;
+    reg_decl_plugins(m);
+    ff_util ff(m);
+    sort_ref field(ff.mk_sort(rational(101)), m);
+    expr_ref x(m.mk_const("input", field), m);
+    expr_ref z(m.mk_const("indicator1", field), m), w(m.mk_const("indicator2", field), m);
+    expr_ref u(m.mk_const("witness1", field), m), v(m.mk_const("witness2", field), m);
+    expr_ref zero(ff.mk_numeral(rational(0), field), m), one(ff.mk_numeral(rational(1), field), m);
+    expr_ref prefix(m.mk_const("frozen_prefix", m.mk_bool_sort()), m);
+    for (bool reverse : {false, true}) {
+        base_dependent_expr_state state(m);
+        state.add(dependent_expr(m, prefix, nullptr, m.mk_leaf(prefix)));
+        state.advance_qhead();
+        expr_ref_vector premises(m);
+        for (unsigned i = 0; i < 2; ++i) {
+            expr* indicator = (i == 0) != reverse ? z.get() : w.get();
+            expr* witness = (i == 0) != reverse ? u.get() : v.get();
+            expr_ref rhs(ff.mk_add(one, ff.mk_mul(x, witness)), m);
+            premises.push_back(m.mk_eq(indicator, rhs));
+            premises.push_back(m.mk_eq(ff.mk_mul(x, indicator), zero));
+        }
+        premises.push_back(m.mk_not(m.mk_eq(z, w)));
+        for (expr* f : premises)
+            state.add(dependent_expr(m, f, nullptr, m.mk_leaf(f)));
+        ff_zero_test_simplifier zero_test(m, state);
+        zero_test.reduce();
+        ENSURE(state.qtail() == 8 && state[0].fml() == prefix);
+        for (unsigned i = 0; i < premises.size(); ++i)
+            ENSURE(state[i + 3].fml() == premises[i]);
+        ff_wire_simplifier wires(m, state);
+        wires.reduce();
+        ENSURE(state[0].fml() == prefix);
+        bool found = false;
+        for (unsigned i = state.qhead(); i < state.qtail(); ++i) {
+            if (!m.is_false(state[i].fml()))
+                continue;
+            ptr_vector<expr> deps;
+            m.linearize(state[i].dep(), deps);
+            ENSURE(deps.size() == premises.size());
+            for (expr* premise : premises)
+                ENSURE(deps.contains(premise));
+            found = true;
+        }
+        ENSURE(found);
+    }
+}
+
 void tst_finite_field() {
+    test_ff_zero_test_wire_priority();
     test_ff_wire_dependencies();
     test_ff_nested_zero_test();
     test_ff_integration();
