@@ -17,7 +17,7 @@ cmake --build build --target z3 test-z3 test-ff-api libz3 build_z3_python_bindin
 python3 tests/finite_field/run_tests.py --build build --suite core --out /tmp/ff-core
 ```
 
-The core selection runs **19 Python suites**, six native groups (`finite_field`,
+The core selection runs **20 Python suites**, six native groups (`finite_field`,
 `ast`, `smt_context`, `smt2print_parse`, `api`, `arith_rewriter`), and the public
 C++ API smoke test. The smoke target keeps assertions enabled in Release builds.
 Coverage includes exhaustive small-field oracles, SAT models and UNSAT cores,
@@ -63,3 +63,15 @@ external proof tests additionally require the checkers documented in
 checkers intentionally do not share the C++ arithmetic/translation implementation.
 `benchmark_qfff.py` remains a small generated benchmark harness; measured public
 corpus comparisons and their provenance belong to the research archive.
+
+The upstream-review regressions additionally check that field-valued function
+applications retain congruence and pointwise models, and that `ff2bv` preserves
+field-valued ITEs. Native tests exercise nested zero-test products (including
+multiplicities and premise dependencies) and transitive wire-substitution cores.
+
+The `poseidon_t3.json` fixture contains width-three Poseidon parameters and test
+vectors for BN254 and BLS12-381 from the Poseidon implementation in
+[HorizenLabs/poseidon2](https://github.com/HorizenLabs/poseidon2/tree/055bde3f4782731ba5f5ce5888a440a94327eaf3/plain_implementations/src/poseidon).
+Its header records the source revision and file hashes. `zk_circuits.py` and
+`test_zk.py` use this data to test circuit semantics; it is not a solver runtime
+dependency. `POSEIDON-LICENSE-MIT` retains the upstream license for this fixture.

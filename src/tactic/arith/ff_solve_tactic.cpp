@@ -79,6 +79,11 @@ namespace {
                 app *a = to_app(e);
                 if (!ff.is_ff(e))
                     throw tactic_exception("ff-solve requires field terms");
+                // This standalone tactic reconstructs models by assigning
+                // constant declarations. Foreign applications require the SMT
+                // theory-combination path, which maintains their congruence.
+                if (!ff.is_interp(e) && !is_uninterp_const(e))
+                    throw tactic_exception("ff-solve requires theory combination for foreign applications");
                 bool ready = true;
                 for (expr *arg : *a)
                     if (!cache.contains(arg)) {
@@ -164,7 +169,7 @@ namespace {
                     // preprocessing heuristic that merely protects likely bits.
                     auto is_square = [&](expr *v, expr *t) {
                         expr *x = nullptr, *y = nullptr;
-                        return !ff.is_interp(v) && ff.is_mul(t, x, y) && x == v && y == v;
+                        return is_uninterp_const(v) && ff.is_mul(t, x, y) && x == v && y == v;
                     };
                     if (is_square(a, b))
                         bits.insert(a);
@@ -182,7 +187,7 @@ namespace {
                     continue;
                 if (!is_app(e))
                     return false;
-                if (!ff.is_interp(e)) {
+                if (is_uninterp_const(e)) {
                     // F_2 already has exactly these two elements; in any larger
                     // field every enumerated variable needs its own bit premise.
                     if (!ff.is_ff(e) || (!bits.contains(e) && ff.modulus(e->get_sort()) != rational(2)))
