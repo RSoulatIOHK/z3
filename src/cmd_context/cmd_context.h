@@ -479,6 +479,7 @@ public:
     void mk_const(symbol const & s, expr_ref & result);
     void mk_app(symbol const & s, unsigned num_args, expr * const * args, unsigned num_indices, parameter const * indices, sort * range,
                 expr_ref & r);
+    bool try_mk_ff_literal(symbol const &s, sort *range, expr_ref &result);
     bool try_mk_macro_app(symbol const & s, unsigned num_args, expr * const * args, unsigned num_indices, parameter const * indices, sort * range,
                 expr_ref & r);
     bool try_mk_builtin_app(symbol const & s, unsigned num_args, expr * const * args, unsigned num_indices, parameter const * indices, sort * range,
