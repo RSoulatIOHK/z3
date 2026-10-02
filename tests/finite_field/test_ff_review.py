@@ -49,6 +49,25 @@ def main():
                  FiniteFieldBitsum(FiniteFieldBitsum(y, x), FiniteFieldBitsum(x, x)), y == -y + 3*y)
     for factory in factories:
         checked(factory, [formula], sat)
+    # Generic mixed BV/field subtraction encoding: a packed Boolean result
+    # equals a-b+2^width, hence its low bits must agree with modular BV subtraction.
+    # The prime exceeds every possible packed value, so there is no field wrap.
+    for width in [1, 2, 3]:
+        field = FiniteFieldSort(101)
+        a, b = BitVecs('review_bv_a review_bv_b', width)
+        digits = [FiniteFieldElem('review_digit_' + str(i), field)
+                  for i in range(width + 1)]
+        zero, one = FiniteFieldVal(0, field), FiniteFieldVal(1, field)
+        def bit(value, i):
+            return If(Extract(i, i, value) == 1, one, zero)
+        def packed(value):
+            return Sum([2**i * bit(value, i) for i in range(width)])
+        premises = [d*d == d for d in digits]
+        premises += [Sum([2**i*d for i, d in enumerate(digits)]) ==
+                     packed(a) - packed(b) + 2**width]
+        mismatch = Or([digits[i] != bit(a-b, i) for i in range(width)])
+        for factory in factories:
+            checked(factory, premises + [mismatch], unsat)
     print('Opaque field terms, function models, congruence and ITE encodings passed')
 
 
