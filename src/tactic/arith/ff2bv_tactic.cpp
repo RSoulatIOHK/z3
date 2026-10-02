@@ -100,7 +100,10 @@ namespace {
             rational value;
             if (ff.is_numeral(a, value))
                 return expr_ref(bv.mk_numeral(value, ff.width(s)), m);
-            if (ff.is_ff(s) && !ff.is_interp(a)) {
+            if (ff.is_ff(s) && is_uninterp_const(a)) {
+                // Only free constants admit independent BV representatives.
+                // ITEs must be translated below, and foreign applications need
+                // SMT congruence, not a fresh independent variable per term.
                 // The bound makes BV values bijective with canonical field
                 // representatives; without it BV equality would distinguish
                 // different encodings of the same field element.

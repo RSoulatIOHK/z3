@@ -25,6 +25,7 @@ Author:
 #include "ast/rewriter/th_rewriter.h"
 #include "ast/rewriter/expr_replacer.h"
 #include "params/smt_params_helper.hpp"
+#include "util/common_msgs.h"
 #include <unordered_map>
 #include <set>
 #include <vector>
@@ -48,20 +49,24 @@ namespace {
         ptr_vector<expr> todo;
         todo.push_back(a);
         todo.push_back(b);
-        std::set<expr *> seen;
+        expr_mark seen;
         while (!todo.empty()) {
             if (!m.inc())
                 return nullptr;
             expr *e = todo.back();
             todo.pop_back();
-            if (!seen.insert(e).second)
+            if (seen.is_marked(e))
                 continue;
+            seen.mark(e, true);
             if (!is_app(e))
                 return nullptr;
             if (!ff.is_interp(e)) {
                 if (var && var != e)
                     return nullptr;
                 var = e;
+                // A foreign field-valued term is one polynomial variable;
+                // its arguments need not even have a field sort.
+                continue;
             }
             for (expr *arg : *to_app(e))
                 todo.push_back(arg);
@@ -211,6 +216,24 @@ void ff_disjunctive_simplifier::reduce() {
 // inverse witness from z's dependencies, making duplicate tests congruent.
 void ff_zero_test_simplifier::reduce() {
     ff_util ff(m);
+    // Associativity changes grouping, not the multiset of factors. Do not
+    // memoize this traversal: repeated factors must retain multiplicity.
+    auto factors_of = [&](expr *e, ptr_vector<expr> &factors) {
+        ptr_vector<expr> todo;
+        todo.push_back(e);
+        while (!todo.empty()) {
+            if (!m.inc())
+                throw rewriter_exception(Z3_CANCELED_MSG);
+            expr *t = todo.back();
+            todo.pop_back();
+            if (ff.is_mul(t)) {
+                for (expr *arg : *to_app(t))
+                    todo.push_back(arg);
+            }
+            else
+                factors.push_back(t);
+        }
+    };
     auto complement = [&](expr *e) -> expr * {
         // Recognize 1-z using -1=p-1. In characteristic two -z=z,
         // so 1+z is the same complement.
@@ -249,9 +272,10 @@ void ff_zero_test_simplifier::reduce() {
             std::swap(a, b);
         if (!ff.is_numeral(b, c) || !c.is_zero() || !ff.is_mul(a))
             continue;
-        auto *mul = to_app(a);
-        for (unsigned j = 0; j < mul->get_num_args(); ++j) {
-            expr *z = mul->get_arg(j);
+        ptr_vector<expr> factors;
+        factors_of(a, factors);
+        for (unsigned j = 0; j < factors.size(); ++j) {
+            expr *z = factors[j];
             bool nz = false;
             if (ff.is_interp(z)) {
                 z = complement(z);
@@ -265,9 +289,9 @@ void ff_zero_test_simplifier::reduce() {
             // The preceding simplify pass folds any zero coefficient
             // away. Remaining numerical factors are nonzero units and
             // may be dropped from an equation c*x*z=0 (or c*x*(1-z)=0).
-            for (unsigned k = 0; k < mul->get_num_args(); ++k)
-                if (k != j && !ff.is_numeral(mul->get_arg(k)))
-                    rec.factors.push_back(mul->get_arg(k));
+            for (unsigned k = 0; k < factors.size(); ++k)
+                if (k != j && !ff.is_numeral(factors[k]))
+                    rec.factors.push_back(factors[k]);
             if (!rec.factors.empty())
                 zeros.insert_if_not_there(z, std::vector<zero>()).push_back(std::move(rec));
         }
@@ -304,13 +328,11 @@ void ff_zero_test_simplifier::reduce() {
                     continue;
             }
             ptr_vector<expr> factors;
-            if (ff.is_mul(term)) {
-                for (expr *arg : *to_app(term))
-                    if (!ff.is_numeral(arg))
-                        factors.push_back(arg);
-            }
-            else
-                factors.push_back(term);
+            ptr_vector<expr> all_factors;
+            factors_of(term, all_factors);
+            for (expr *arg : all_factors)
+                if (!ff.is_numeral(arg))
+                    factors.push_back(arg);
             auto remaining = factors;
             // Match a factorization term=c*x*u structurally, retaining
             // multiplicities. This does not divide by symbolic x:
@@ -369,6 +391,7 @@ void ff_wire_simplifier::reduce() {
     ff_util ff(m);
     obj_map<expr, unsigned> ids;
     ptr_vector<expr> vars, defs;
+    unsigned_vector defining_indices;
     std::set<expr *> bits;
     for (unsigned i : indices())
         if (expr *v = domain_variable(m, ff, m_fmls[i].fml()))
@@ -379,20 +402,24 @@ void ff_wire_simplifier::reduce() {
         expr *v = nullptr, *rhs = nullptr;
         if (!m.is_eq(m_fmls[i].fml(), v, rhs))
             continue;
-        if (ff.is_interp(v))
+        if (!is_uninterp_const(v))
             std::swap(v, rhs);
-        // Keep one defining equality per variable; other equalities
-        // remain constraints, so conflicting definitions cannot vanish.
-        if (ff.is_interp(v) || !ff.is_ff(v) || bits.contains(v) || ids.contains(v) || occurs(v, rhs))
+        // Only a free constant can be eliminated and restored by assigning its
+        // declaration. A field-valued f(t), select, or ite is an opaque variable
+        // for polynomial reasoning, but not a freely assignable model constant:
+        // deleting its definition would lose congruence or interpreted semantics.
+        // Keep one defining equality; conflicting definitions remain constraints.
+        if (!is_uninterp_const(v) || !ff.is_ff(v) || bits.contains(v) || ids.contains(v) || occurs(v, rhs))
             continue;
         ids.insert(v, static_cast<unsigned>(vars.size()));
         vars.push_back(v);
         defs.push_back(rhs);
+        defining_indices.push_back(i);
     }
     std::vector<std::vector<unsigned>> uses(vars.size());
     std::vector<unsigned> degree(vars.size(), 0), ready;
     for (unsigned i = 0; i < defs.size(); ++i) {
-        std::set<expr *> seen;
+        expr_mark seen;
         ptr_vector<expr> todo;
         todo.push_back(defs[i]);
         while (!todo.empty()) {
@@ -400,8 +427,9 @@ void ff_wire_simplifier::reduce() {
                 return;
             expr *e = todo.back();
             todo.pop_back();
-            if (!seen.insert(e).second)
+            if (seen.is_marked(e))
                 continue;
+            seen.mark(e, true);
             if (!is_app(e))
                 return;
             unsigned id;
@@ -428,7 +456,7 @@ void ff_wire_simplifier::reduce() {
     }
     if (order.empty())
         return;
-    scoped_ptr<expr_substitution> subst = alloc(expr_substitution, m);
+    scoped_ptr<expr_substitution> subst = alloc(expr_substitution, m, true);
     scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m, false);
     rp->set_substitution(subst.get());
     // Build the substitution bottom-up in dependency order, applying the
@@ -437,6 +465,7 @@ void ff_wire_simplifier::reduce() {
     // whose definitions transitively depend on earlier entries, the fully
     // substituted definitions recomputed below coincide with what the final
     // substitution produces when later applied to every formula.
+    th_rewriter rw(m);
     for (unsigned i : order) {
         if (!m.inc())
             return;
@@ -444,9 +473,16 @@ void ff_wire_simplifier::reduce() {
         proof_ref new_pr(m);
         expr_dependency_ref new_dep(m);
         (*rp)(defs[i], new_def, new_pr, new_dep);
-        subst->insert(vars[i], new_def);
+        // Normalize at each wire boundary, before another definition copies
+        // the expanded DAG. This preserves the sharing and early cancellations
+        // of the former tactic implementation.
+        rw(new_def);
+        new_dep = m.mk_join(new_dep, m_fmls[defining_indices[i]].dep());
+        subst->insert(vars[i], new_def, new_dep);
+        // The substitution has changed: cached rewrites of a newly defined
+        // variable (or a containing term) must not survive this mutation.
+        rp->reset();
     }
-    th_rewriter rw(m);
     for (unsigned i : indices()) {
         if (!m.inc())
             return;
@@ -519,7 +555,7 @@ bool ff_basic_simplifier::skip_boolean_goal() {
     // This is a cost heuristic: returning the unchanged goal neither
     // assumes a Boolean assignment nor drops any field constraint.
     ptr_vector<expr> todo;
-    std::set<expr *> seen;
+    expr_mark seen;
     for (unsigned i : indices())
         todo.push_back(m_fmls[i].fml());
     while (!todo.empty()) {
@@ -527,8 +563,9 @@ bool ff_basic_simplifier::skip_boolean_goal() {
             return true;
         expr *e = todo.back();
         todo.pop_back();
-        if (!seen.insert(e).second)
+        if (seen.is_marked(e))
             continue;
+        seen.mark(e, true);
         if (!is_app(e) || (is_uninterp_const(e) && m.is_bool(e)))
             return true;
         for (expr *arg : *to_app(e))
