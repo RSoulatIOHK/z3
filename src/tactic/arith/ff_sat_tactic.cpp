@@ -199,8 +199,9 @@ namespace {
                     m.linearize(solved[0]->dep(0), core);
                     sat::literal_vector learned;
                     for (expr *e : core) {
-                        if (m.is_not(e))
-                            learned.push_back(lits.find(to_app(e)->get_arg(0)));
+                        expr *arg = nullptr;
+                        if (m.is_not(e, arg))
+                            learned.push_back(lits.find(arg));
                         else
                             learned.push_back(~lits.find(e));
                     }

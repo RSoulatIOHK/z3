@@ -1452,17 +1452,8 @@ bool cmd_context::try_mk_pdecl_app(symbol const & s, unsigned num_args, expr * c
 }
 
 
-void cmd_context::mk_app(symbol const & s, unsigned num_args, expr * const * args, 
-                         unsigned num_indices, parameter const * indices, sort * range,
-                         expr_ref & result) {
-
-    
-
-    if (try_mk_macro_app(s, num_args, args, num_indices, indices, range, result))
-        return;
-    if (try_mk_declared_app(s, num_args, args, num_indices, indices, range, result))
-        return;   
-    if (!num_args && !num_indices && !s.is_numerical()) {
+bool cmd_context::try_mk_ff_literal(symbol const &s, sort *range, expr_ref &result) {
+    if (!s.is_numerical()) {
         std::string name = s.str();
         if (name.starts_with("#f")) {
             auto separator = name.find('m', 2);
@@ -1476,23 +1467,38 @@ void cmd_context::mk_app(symbol const & s, unsigned num_args, expr * const * arg
                     sort_ref field(ff.mk_sort(rational(prime.c_str())), m());
                     if (range && range != field) throw cmd_exception("finite-field literal sort mismatch");
                     result = ff.mk_numeral(rational(value.c_str()), field);
-                    return;
+                    return true;
                 }
             }
             throw cmd_exception("invalid finite-field literal, expected #f<integer>m<prime>");
         }
     }
-    if (range && ff_util(m()).is_ff(range) && !num_args && !num_indices && !s.is_numerical()) {
+    if (range && ff_util(m()).is_ff(range) && !s.is_numerical()) {
         std::string name = s.str();
         if (name.starts_with("ff")) {
             std::string value = name.substr(2);
             unsigned start = !value.empty() && value[0] == '-' ? 1 : 0;
             if (value.size() > start && value.find_first_not_of("0123456789", start) == std::string::npos) {
                 result = ff_util(m()).mk_numeral(rational(value.c_str()), range);
-                return;
+                return true;
             }
         }
     }
+    return false;
+}
+
+void cmd_context::mk_app(symbol const & s, unsigned num_args, expr * const * args,
+                         unsigned num_indices, parameter const * indices, sort * range,
+                         expr_ref & result) {
+
+
+
+    if (try_mk_macro_app(s, num_args, args, num_indices, indices, range, result))
+        return;
+    if (try_mk_declared_app(s, num_args, args, num_indices, indices, range, result))
+        return;
+    if (!num_args && !num_indices && try_mk_ff_literal(s, range, result))
+        return;
     if (!range && s == symbol("is") && try_mk_pdecl_app(s, num_args, args, num_indices, indices, result))
         return;
     if (try_mk_builtin_app(s, num_args, args, num_indices, indices, range, result)) 
