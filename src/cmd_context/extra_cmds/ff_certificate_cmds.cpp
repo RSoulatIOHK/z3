@@ -19,6 +19,9 @@ Author:
 #include "cmd_context/cmd_context.h"
 #include "cmd_context/parametric_cmd.h"
 #include "ast/ff_decl_plugin.h"
+#include "ast/proofs/proof_checker.h"
+#include "ast/proofs/proof_utils.h"
+#include "ast/rewriter/th_rewriter.h"
 #include "math/ff/ff_certificate.h"
 #include "util/cancel_eh.h"
 #include "util/scoped_ctrl_c.h"
@@ -159,5 +162,102 @@ namespace {
             }
         }
     };
+    class ff_check_native_proof_cmd : public cmd {
+    public:
+        ff_check_native_proof_cmd() : cmd("ff-check-native-proof") {}
+        char const *get_usage() const override { return ""; }
+        char const *get_descr(cmd_context &) const override { return "replay a pure QF_FF native proof against current assertions"; }
+        unsigned get_arity() const override { return 0; }
+        void execute(cmd_context &ctx) override {
+            if (!ctx.produce_proofs() || ctx.cs_state() != cmd_context::css_unsat)
+                throw cmd_exception("an UNSAT result with native proofs is required");
+            auto &m = ctx.m();
+            proof_ref root(ctx.get_check_sat_result()->get_proof(), m);
+            if (!root || !m.is_false(m.get_fact(root))) throw cmd_exception("native refutation unavailable");
+            ff_util ff(m);
+            expr_mark assertions, visited;
+            ptr_vector<expr> todo;
+            for (expr *f : ctx.assertions()) { assertions.mark(f, true); todo.push_back(f); }
+            // This checker profile deliberately excludes other theories. The
+            // general native checker trusts some other-theory lemma families;
+            // accepting them here would overstate input-to-result validation.
+            while (!todo.empty()) {
+                if (!m.inc()) throw cmd_exception("native proof check canceled");
+                expr *e = todo.back(); todo.pop_back();
+                if (visited.is_marked(e)) continue;
+                visited.mark(e, true);
+                if (!is_app(e) || (!m.is_bool(e) && !ff.is_ff(e)) ||
+                    (is_uninterp(e) && !is_uninterp_const(e)))
+                    throw cmd_exception("native proof checker profile requires pure ground QF_FF");
+                for (expr *arg : *to_app(e)) todo.push_back(arg);
+            }
+            if (!proof_utils::is_closed(m, root)) throw cmd_exception("native proof has open hypotheses");
+            visited.reset(); todo.push_back(root);
+            th_rewriter rw(m);
+            unsigned fields = 0;
+            while (!todo.empty()) {
+                if (!m.inc()) throw cmd_exception("native proof check canceled");
+                expr *e = todo.back(); todo.pop_back();
+                if (visited.is_marked(e)) continue;
+                visited.mark(e, true);
+                if (!is_app(e)) throw cmd_exception("malformed native proof");
+                auto *a = to_app(e);
+                if (a->get_family_id() != m.get_basic_family_id())
+                    throw cmd_exception("unsupported native proof family");
+                {
+                    switch (a->get_decl_kind()) {
+                    case PR_TRUE:
+                        if (!m.is_true(m.get_fact(a))) throw cmd_exception("invalid truth proof");
+                        break;
+                    case PR_DEF_AXIOM: {
+                        expr_ref reduced(m);
+                        rw(m.get_fact(a), reduced);
+                        if (!m.is_true(reduced)) throw cmd_exception("native Boolean axiom was not discharged");
+                        break;
+                    }
+                    case PR_SYMMETRY: case PR_TRANSITIVITY: case PR_TRANSITIVITY_STAR:
+                    case PR_MONOTONICITY:
+                        // The general checker assumes the relation has these
+                        // properties. This profile only permits equality.
+                        if (!m.is_eq(m.get_fact(a)))
+                            throw cmd_exception("native relational proof requires equality");
+                        break;
+                    case PR_ASSERTED: case PR_MODUS_PONENS: case PR_REFLEXIVITY:
+                    case PR_AND_ELIM: case PR_NOT_OR_ELIM:
+                    case PR_REWRITE: case PR_REWRITE_STAR: case PR_HYPOTHESIS:
+                    case PR_LEMMA: case PR_UNIT_RESOLUTION: case PR_IFF_TRUE:
+                    case PR_IFF_FALSE: case PR_COMMUTATIVITY: case PR_IFF_OEQ:
+                    case PR_MODUS_PONENS_OEQ: case PR_TH_LEMMA:
+                        break;
+                    default:
+                        throw cmd_exception("unsupported native proof rule");
+                    }
+                    if (a->get_decl_kind() == PR_ASSERTED && !assertions.is_marked(m.get_fact(a)))
+                        throw cmd_exception("native proof assertion is absent from the original input");
+                    if (a->get_decl_kind() == PR_TH_LEMMA) {
+                        auto *d = a->get_decl();
+                        if (!d->get_num_parameters() || !d->get_parameter(0).is_symbol() ||
+                            d->get_parameter(0).get_symbol() != symbol("ff"))
+                            throw cmd_exception("unsupported native theory lemma");
+                        ++fields;
+                    }
+                }
+                for (unsigned i = 0; i < m.get_num_parents(a); ++i) todo.push_back(m.get_parent(a, i));
+            }
+            proof_checker checker(m);
+            expr_ref_vector conditions(m);
+            if (!checker.check(root, conditions)) throw cmd_exception("native proof replay failed");
+            for (expr *condition : conditions) {
+                expr_ref reduced(m);
+                rw(condition, reduced);
+                if (!m.is_true(reduced)) throw cmd_exception("native rewrite obligation was not discharged");
+            }
+            ctx.regular_stream() << "(ff-native-proof-checked :field-lemmas " << fields << ")\n";
+        }
+    };
+
 }
-void install_ff_certificate_cmds(cmd_context &ctx) { ctx.insert(alloc(ff_certify_cmd)); }
+void install_ff_certificate_cmds(cmd_context &ctx) {
+    ctx.insert(alloc(ff_certify_cmd));
+    ctx.insert(alloc(ff_check_native_proof_cmd));
+}

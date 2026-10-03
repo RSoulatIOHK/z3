@@ -9,5 +9,6 @@ z3_add_component(extra_cmds
     arith_tactics
     cmd_context
     ff
+    proofs
     subpaving_tactic
 )

@@ -4,13 +4,18 @@
 Native C++ tests additionally replay the full proof and each field DAG. This
 suite checks the public API without selecting a special tactic or FF option.
 """
+import os
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(os.environ.get('Z3_SOURCE_DIR', Path(__file__).resolve().parents[2])) / 'scripts'))
+import ff_native_evidence as native
 from z3 import *
 set_option(proof=True)
 import test_ff_combination as combination
 
 original_check = combination.check
 def has_field_evidence(proof):
-    seen, todo = set(), [proof]
+    seen, todo, found = set(), [proof], False
     while todo:
         p = todo.pop()
         if p.get_id() in seen: continue
@@ -20,9 +25,10 @@ def has_field_evidence(proof):
             params = p.decl().params()
             if len(params) == 3 and params[:2] == ['ff', 'pac']:
                 assert str(params[2].decl().name()) == 'ff-pac'
-                return True
+                native.check_lemma(p)
+                found = True
         todo.extend(p.children())
-    return False
+    return found
 
 
 counts = {'unsat': 0, 'field': 0, 'sat': 0}
