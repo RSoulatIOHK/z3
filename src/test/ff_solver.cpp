@@ -12,6 +12,7 @@ Abstract:
 
 --*/
 #include "ast/ff/ff_solver.h"
+#include "ast/ff/ff_evidence.h"
 #include "ast/reg_decl_plugins.h"
 #include "ast/rewriter/expr_safe_replace.h"
 #include "util/debug.h"
@@ -193,7 +194,67 @@ namespace {
     }
 }
 
+static void evidence_contract() {
+    ast_manager m;
+    reg_decl_plugins(m);
+    ff_util ff(m);
+    for (unsigned prime : {2u,3u,7u,101u}) {
+        sort_ref field(ff.mk_sort(rational(prime)),m);
+        expr_ref x(m.mk_const("proof_x",field),m), y(m.mk_const("proof_y",field),m);
+        expr_ref one(ff.mk_numeral(rational(1),field),m), two(ff.mk_numeral(rational(2),field),m);
+        expr_ref square(ff.mk_mul(x,x),m);
+        ff::solver core(m,field,params_ref());
+        core.add(x,one,true);
+        core.add(y,square,true);
+        core.add(y,two,true);
+        ENSURE(core.check(true)==l_false);
+        app_ref proof(core.evidence(),m);
+        ENSURE(proof && ff::check_refutation(m,proof));
+        ENSURE(ff::refutation_clause(m,proof).size()==3);
+        // Rebinding the same polynomial DAG to satisfiable original premises
+        // must fail. This detects missing input/definition links, not only a
+        // corrupted arithmetic coefficient inside the proof.
+        expr_ref_vector sat_premises(m);
+        sat_premises.push_back(m.mk_eq(x,one));
+        sat_premises.push_back(m.mk_eq(y,square));
+        sat_premises.push_back(m.mk_eq(y,one));
+        expr_ref ps(m.mk_app(symbol("ff-premises"),sat_premises.size(),sat_premises.data(),m.mk_proof_sort()),m);
+        expr* args[]={ps,proof->get_arg(1)};
+        app_ref forged(m.mk_app(symbol("ff-pac"),2,args,m.mk_proof_sort()),m);
+        ENSURE(!ff::check_refutation(m,forged));
+        expr_ref zero(ff.mk_numeral(rational(0),field),m);
+        expr* mul_args[]={proof->get_arg(1),zero};
+        expr_ref mul(m.mk_app(symbol("ff-mul"),2,mul_args,m.mk_proof_sort()),m);
+        expr* bad_args[]={proof->get_arg(0),mul};
+        forged=m.mk_app(symbol("ff-pac"),2,bad_args,m.mk_proof_sort());
+        ENSURE(!ff::check_refutation(m,forged));
+        ff::solver diseq(m,field,params_ref());
+        diseq.add(x,one,true);diseq.add(x,one,false);
+        ENSURE(diseq.check(true)==l_false);
+        ENSURE(ff::check_refutation(m,diseq.evidence()));
+        // SAT does not produce a contradictory certificate.
+        ff::solver consistent(m,field,params_ref());
+        consistent.add(x,one,true);
+        ENSURE(consistent.check(true)==l_true && !consistent.evidence());
+    }
+    sort_ref field(ff.mk_sort(rational(7)),m);
+    expr_ref x(m.mk_const("nonresidue",field),m), square(ff.mk_mul(x,x),m);
+    expr_ref three(ff.mk_numeral(rational(3),field),m);
+    ff::solver no_root(m,field,params_ref());
+    no_root.add(square,three,true);
+    ENSURE(no_root.check(true)==l_false);
+    ENSURE(ff::check_refutation(m,no_root.evidence()));
+    params_ref limited;limited.set_uint("ff.max_steps",0);
+    ff::solver budget(m,field,limited);
+    budget.add(square,three,true);
+    bool exhausted=false;
+    try { ENSURE(budget.check(true)==l_undef); }
+    catch (ff::exhausted const&) { exhausted=true; }
+    ENSURE(exhausted && !budget.evidence());
+}
+
 void tst_ff_solver() {
+    evidence_contract();
     exhaustive_problems();
     interface_and_scope_contract();
     root_clause_contract();
