@@ -17,6 +17,7 @@ Copyright (c) 2015 Microsoft Corporation
 #include "ast/simplifiers/demodulator_simplifier.h"
 #include "ast/simplifiers/recfun_finder.h"
 #include "ast/simplifiers/solve_eqs.h"
+#include "ast/simplifiers/propagate_values.h"
 #include "smt/smt_solver.h"
 #include "solver/solver.h"
 
@@ -530,7 +531,53 @@ static void test_flatten_suffix_proofs() {
     check_simplifier_proofs(m, st, assertions);
 }
 
+static void test_propagate_values_proofs() {
+    ast_manager m(PGM_ENABLED);
+    reg_decl_plugins(m);
+    arith_util a(m);
+    expr_ref x(m.mk_const("value_x", a.mk_int()), m);
+    expr_ref p(m.mk_const("value_p", m.mk_bool_sort()), m);
+    expr_ref q(m.mk_const("value_q", m.mk_bool_sort()), m);
+    for (unsigned shape = 0; shape < 4; ++shape) {
+        expr_ref premise(m), consequence(m);
+        if (shape < 2) {
+            premise = shape == 0 ? p.get() : m.mk_not(p);
+            consequence = m.mk_or(shape == 0 ? m.mk_not(p) : p.get(), q);
+        }
+        else {
+            premise = shape == 2 ? m.mk_eq(x, a.mk_int(3)) : m.mk_eq(a.mk_int(3), x);
+            consequence = m.mk_or(a.mk_lt(x, a.mk_int(2)), q);
+        }
+        for (bool frozen : {false, true}) {
+            base_dependent_expr_state state(m);
+            state.add(dependent_expr(m, premise, m.mk_asserted(premise), m.mk_leaf(premise)));
+            if (frozen) state.advance_qhead();
+            state.add(dependent_expr(m, consequence, m.mk_asserted(consequence), m.mk_leaf(consequence)));
+            propagate_values pass(m, params_ref(), state);
+            ENSURE(pass.supports_proofs());
+            pass.reduce();
+            ENSURE(state[1].fml() == q);
+            ptr_vector<expr> dependencies;
+            m.linearize(state[1].dep(), dependencies);
+            ENSURE(dependencies.contains(premise) && dependencies.contains(consequence));
+            proof_checker checker(m);
+            expr_ref_vector conditions(m);
+            ENSURE(state[1].pr() && m.get_fact(state[1].pr()) == q);
+            ENSURE(checker.check(state[1].pr(), conditions));
+            th_rewriter rw(m);
+            for (expr* condition : conditions) {
+                expr_ref reduced(m); rw(condition, reduced);
+                ENSURE(m.is_true(reduced));
+            }
+            for (expr* e : subterms::all(expr_ref(state[1].pr(), m)))
+                if (m.is_asserted(e))
+                    ENSURE(m.get_fact(to_app(e)) == premise || m.get_fact(to_app(e)) == consequence);
+        }
+    }
+}
+
 void tst_simplifier() {
+    test_propagate_values_proofs();
 
     test_array();
     test_bv();
