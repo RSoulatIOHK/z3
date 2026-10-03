@@ -27,7 +27,7 @@ Z3_sort Z3_API Z3_mk_finite_field_sort(Z3_context c, Z3_string prime) {
     Z3_TRY;
     LOG_Z3_mk_finite_field_sort(c, prime);
     RESET_ERROR_CODE();
-    if (!prime || !*prime) {
+    if (!prime || !*prime || std::string(prime).find_first_not_of("0123456789") != std::string::npos) {
         SET_ERROR_CODE(Z3_INVALID_ARG, "prime modulus must be a decimal integer");
         RETURN_Z3(nullptr);
     }
