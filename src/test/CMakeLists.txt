@@ -133,6 +133,7 @@ add_executable(test-z3
   sat_local_search.cpp
   sat_lookahead.cpp
   sat_user_scope.cpp
+  smt_proof_checker.cpp
   scoped_timer.cpp
   scoped_vector.cpp
   seq_power.cpp
