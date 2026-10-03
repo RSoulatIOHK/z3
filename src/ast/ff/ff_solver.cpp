@@ -520,9 +520,29 @@ namespace ff {
             to_app(a)->get_num_args() <= 16) {
             // A field has no zero divisors: a product is zero iff some
             // factor is zero. Nonzero constant factors need no branch.
-            for (expr *arg : *to_app(a))
-                if (!ff.is_numeral(arg))
-                    branches.push_back(m.mk_eq(arg, b));
+            ptr_vector<expr> pending;
+            pending.push_back(a);
+            unsigned factor_count = 0;
+            while (!pending.empty()) {
+                if (!m.inc())
+                    return false;
+                expr* arg = pending.back();
+                pending.pop_back();
+                if (ff.is_mul(arg)) {
+                    for (expr* child : *to_app(arg))
+                        pending.push_back(child);
+                }
+                else {
+                    // Count leaves, not binary nodes. Preserve the same bound
+                    // and complete factor alternatives under either grouping.
+                    if (++factor_count > 16) {
+                        branches.reset();
+                        return false;
+                    }
+                    if (!ff.is_numeral(arg))
+                        branches.push_back(m.mk_eq(arg, b));
+                }
+            }
         }
         else {
             expr_ref lhs = square_root_term(a), rhs = square_root_term(b);
