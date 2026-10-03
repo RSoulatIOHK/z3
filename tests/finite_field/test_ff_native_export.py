@@ -8,6 +8,7 @@ import tempfile
 sys.path.insert(0, str(Path(os.environ.get('Z3_SOURCE_DIR', Path(__file__).resolve().parents[2])) / 'scripts'))
 from z3 import *
 import ff_native_evidence as native
+import ff_native_alethe as whole
 import ff_certificate as fc
 
 
@@ -27,6 +28,57 @@ def rejects(action):
     try: action()
     except fc.Invalid: return
     raise AssertionError('corrupted native evidence accepted')
+
+
+def check_whole_proofs(args):
+    cases = [
+        '(declare-const a Bool)(assert a)(assert (not a))',
+        '(declare-const x (_ FiniteField 2))(assert (= (ff.add (ff.mul x x) x) #f1m2))',
+        '(declare-const x (_ FiniteField 7))(assert (= (ff.mul x x) #f3m7))',
+    ]
+    for prime in [101, 2**127 - 1]:
+        f = f'(_ FiniteField {prime})'; zero = f'#f0m{prime}'; one = f'#f1m{prime}'
+        declarations = ''.join(f'(declare-const {x} {f})' for x in ['x', 'y', 'z', 'w', 'u', 'v'])
+        cases.append(declarations + f'(assert (= y (ff.add x {one})))'
+                     f'(assert (= (ff.mul y y) {one}))(assert (not (= y {one})))'
+                     f'(assert (not (= y #f{prime-1}m{prime})))')
+        cases.append(declarations + f'(assert (or (= x {zero}) (= x {one})))'
+                     '(assert (not (= (ff.mul x x) x)))')
+        for nonzero in [False, True]:
+            body = declarations
+            for indicator, inverse in [('z','u'), ('w','v')]:
+                factor = f'(ff.add {one} (ff.neg {indicator}))' if nonzero else indicator
+                rhs = f'(ff.mul x {inverse})'
+                if not nonzero: rhs = f'(ff.add {one} {rhs})'
+                body += f'(assert (= (ff.mul x {factor}) {zero}))(assert (= {indicator} {rhs}))'
+            cases.append(body + '(assert (not (= z w)))')
+    for body in cases:
+        text = '(set-logic QF_FF)' + body
+        ctx = Context(proof=True); solver = Solver(ctx=ctx)
+        solver.set(timeout=10000); solver.from_string(text)
+        assert solver.check() == unsat
+        proof = solver.proof(); del solver
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp); files = whole.artifacts(text, proof)
+            (directory/'problem.smt2').write_text(text)
+            for name, value in files.items(): (directory/name).write_text(value)
+            whole.check_bundle(text, proof, directory, args.carcara, args.ffpacheck)
+            # Replacing the original assertions or changing the saved payload
+            # must be rejected before invoking external tools.
+            rejects(lambda: whole.artifacts('(set-logic QF_FF)(assert true)', proof))
+            for name in ['problem.smt2', 'proof.alethe'] + [n for n in files if n.endswith('.pac')][:1]:
+                path = directory/name; saved = path.read_text(); path.write_text(saved + '\n; changed\n')
+                rejects(lambda: whole.check_bundle(text, proof, directory, args.carcara, args.ffpacheck))
+                path.write_text(saved)
+    # A supported proof rule cannot justify treating a non-contradictory root
+    # as an UNSAT certificate.
+    ctx = Context(proof=True); solver = Solver(ctx=ctx)
+    solver.from_string('(declare-const x (_ FiniteField 101))(assert (= (ff.add x #f1m101) #f1m101))(assert (not (= x #f0m101)))')
+    assert solver.check() == unsat
+    proof = solver.proof()
+    forged = substitute(proof, (BoolVal(False, ctx), BoolVal(True, ctx)))
+    rejects(lambda: whole.artifacts('(assert false)', forged))
+    return len(cases)
 
 
 def main():
@@ -83,7 +135,8 @@ def main():
                 rejects(lambda: native.check_bundle(lemma, tmp, args.carcara, args.ffpacheck))
     finally:
         native.pp.run = old_run
-    print('NATIVE_FF_EXTERNAL_PASS', checked, 'recorded field lemmas')
+    whole_checked = check_whole_proofs(args)
+    print('NATIVE_FF_EXTERNAL_PASS', checked, 'recorded field lemmas;', whole_checked, 'whole native proofs')
 
 
 if __name__ == '__main__':

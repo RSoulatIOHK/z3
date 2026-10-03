@@ -151,8 +151,10 @@ Standalone reconstruction and independent checking are described in
 [QF_FF_CERTIFICATES.md](QF_FF_CERTIFICATES.md) and the
 [Alethe/PAC pipeline](QF_FF_PROOF_PIPELINE.md). Default `produce-proofs` now
 records native FF evidence through both SMT adapters, with proof-capable wire
-and equality preprocessing. Native field leaves can be exported and checked;
-this is not yet an external Alethe proof of the whole native SMT trace.
+and equality preprocessing. Value propagation, disjunctive domains and zero-test
+indicators now retain proofs too. Native field leaves and a bounded pure-ground
+whole-proof profile can be exported to Alethe/PAC and checked externally.
+Whole-proof export for other theories and Lean checking remain unsupported.
 Root/field
 closure, uniqueness and small-field-search traces remain incomplete. Conflict
 premise sets alone are not certificates.
