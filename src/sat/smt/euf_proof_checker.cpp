@@ -485,7 +485,7 @@ namespace euf {
         log_verified(proof_hint, false);
 
         ensure_solver();
-        m_solver->push();
+        solver::scoped_push scope(*m_solver);
         for (expr* lit : vc)
             m_solver->assert_expr(m.mk_not(lit));
         lbool is_sat = m_solver->check_sat();
@@ -501,9 +501,11 @@ namespace euf {
                 mdl->evaluate_constants();
                 std::cout << *mdl << "\n";
             }                
-            exit(0);
+            // A rejected lemma is an error, not successful process completion.
+            // Unwind the temporary verification assumptions before returning
+            // control to an API caller that may recover and reuse the checker.
+            throw default_exception("SMT proof verification failed");
         }
-        m_solver->pop(1);
         std::cout << "(verified-smt"; 
         if (proof_hint) std::cout << "\n" << mk_bounded_pp(proof_hint, m, 4);
         for (expr* arg : clause)
@@ -545,4 +547,3 @@ namespace euf {
     }
     
 }
-

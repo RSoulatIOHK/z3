@@ -200,6 +200,7 @@
     X(simplex) \
     X(sat_user_scope) \
     X(sat_smt_proof_scope) \
+    X(smt_proof_checker) \
     X_ARGV(ddnf) \
     X(ddnf1) \
     X(model_evaluator) \
