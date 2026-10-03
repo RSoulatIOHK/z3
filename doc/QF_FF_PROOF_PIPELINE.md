@@ -4,7 +4,20 @@ With `(set-option :produce-proofs true)`, the default finite-field solver record
 its actual algebra derivation and attaches premise-bound PAC evidence to native
 `th-lemma` proof nodes. The legacy SMT adapter and SAT/EUF adapter share this
 interface. Value propagation, wire substitution, equality elimination, disjunctive
-field domains, zero-test indicators and rewriting compose native proofs. A local
+field domains, zero-test indicators and rewriting compose native proofs.
+Bounded circuit preprocessing also records Boolean case proofs for arithmetic
+on finite-valued ITEs. Small gates and wide products preserve shared Boolean
+conditions at wire boundaries; a memoized case expansion compiles eligible
+field atoms without enumerating complete circuit assignments. At most 256
+residual states per atom and 32 selector levels are explored. Unsupported or
+larger expressions retain their original meaning and go to ordinary search.
+The simplifiers live under `ast/simplifiers`, use no SMT context, and require no
+field-specific proof-mode switch. All selector hypotheses are discharged.
+
+Native replay additionally normalizes polynomial rewrite obligations, accepting
+field equations related by an exact nonzero scalar. This does not compute an
+ideal or invoke a solver, and does not identify arbitrary field-valued terms.
+ A local
 preprocessing proof that exhausts its budget leaves the original constraints intact. Unsupported recorded
 reasoning returns `unknown`, rather than an unproved UNSAT answer.
 
@@ -38,9 +51,9 @@ Its current profile is pure ground, single-prime-field SMT with Boolean
 connectives and field ITEs. Arrays, sequences, field-valued UFs and mixed fields
 are outside this **external export** profile; native proof production still
 supports the existing theory combinations. Lean checking is not implemented.
-Seventeen focused whole-proof regressions exercise Boolean reasoning, wire
+Twenty-six focused whole-proof regressions exercise Boolean reasoning, wire
 elimination, domains, both indicator polarities, small-field roots and a
-127-bit prime, nested input conjunctions and n-ary field syntax, with actual Carcara/Pacheck acceptance and mutation rejection.
+127-bit prime, nested input conjunctions and n-ary field syntax, and local AND/XOR/mux case proofs, with actual Carcara/Pacheck acceptance and mutation rejection.
 This is not a claim of full FMCAD external-checking coverage.
 
 With the matching Python bindings and shared library on the paths:
