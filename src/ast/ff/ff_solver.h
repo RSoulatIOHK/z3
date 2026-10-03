@@ -49,12 +49,17 @@ namespace ff {
         void add(expr *a, expr *b, bool equality);
         // May throw exhausted on resource limits, just like the algebra engine.
         // SAT candidates are rechecked against every supplied original constraint.
-        lbool check();
+        lbool check(bool record_proof = false);
+        // Available only after a proof-producing UNSAT check. Exact original
+        // premises and the definitional encoding are bound by the checker.
+        app* evidence() const;
+        // Bounded evidence-producing completion of an inconclusive check.
+        bool refute();
         rational value(expr *term);
         expr *premise(unsigned index) const;
         // Exact input indices supporting UNSAT. These are explanations, NOT
-        // checked proof objects. A future evidence recorder must also certify
-        // normalization, substitution and the frontend's premise justifications.
+        // checked proof objects. In recording mode evidence() additionally carries
+        // a replayable refutation. Frontends still justify the input premises.
         std::set<unsigned> const &conflict() const;
     };
 

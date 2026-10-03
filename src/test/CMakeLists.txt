@@ -114,6 +114,7 @@ add_executable(test-z3
   permutation.cpp
   finite_field.cpp
   ff_solver.cpp
+  ff_euf.cpp
   polynomial.cpp
   polynomial_factorization.cpp
   polynorm.cpp
@@ -135,6 +136,7 @@ add_executable(test-z3
   sat_local_search.cpp
   sat_lookahead.cpp
   sat_user_scope.cpp
+  sat_smt_proof_scope.cpp
   scoped_timer.cpp
   scoped_vector.cpp
   seq_power.cpp

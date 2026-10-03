@@ -17,14 +17,22 @@ cmake --build build --target z3 test-z3 test-ff-api libz3 build_z3_python_bindin
 python3 tests/finite_field/run_tests.py --build build --suite core --out /tmp/ff-core
 ```
 
-The core selection runs **20 Python suites**, six native groups (`finite_field`,
-`ast`, `smt_context`, `smt2print_parse`, `api`, `arith_rewriter`), and the public
+The core selection runs **21 Python suites**, eight native groups (`finite_field`,
+`ff_solver`, `ff_euf`, `ast`, `smt_context`, `smt2print_parse`, `api`, `arith_rewriter`), and the public
 C++ API smoke test. The smoke target keeps assertions enabled in Release builds.
 Coverage includes exhaustive small-field oracles, SAT models and UNSAT cores,
 generic equality rewriting, global/local options, mixed theories, translated
 contexts, scopes, cancellation, fallback recovery, F4 and scalar backends.
 
-Certificate validation is a separate explicit selection:
+`ff_solver` tests the reusable core and rejects corrupted or rebound evidence.
+`ff_euf` retains and checks native field hints across persistent scopes.
+`test_ff_euf.py` exercises the second consumer with mixed theories, exhaustive
+finite-field/UF oracles and online field-proof checking. It requires successful
+`ff-pac` replay and rejects fallback to SMT for those field hints; other theories
+retain their existing checker behavior. Sequence coverage remains on the legacy
+SMT adapter because SAT/EUF has no sequence theory plugin.
+
+External certificate validation is a separate explicit selection:
 
 ```sh
 python3 tests/finite_field/proof_checkers/build.py --out /tmp/ff-checkers

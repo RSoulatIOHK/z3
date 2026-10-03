@@ -12,6 +12,7 @@ Abstract:
 
 --*/
 #include "ast/ff/ff_solver.h"
+#include "ast/ff/ff_evidence.h"
 #include "math/ff/ff_params.h"
 #include "util/z3_exception.h"
 
@@ -41,6 +42,7 @@ namespace ff {
         ast_manager &m;
         ff_util ff;
         smt_params_helper options;
+        params_ref params;
         ff::engine algebra;
         solver_cache::imp local;
         solver_cache::imp &enc;
@@ -49,7 +51,10 @@ namespace ff {
         std::vector<ff::polynomial> eqs, neqs;
         expr_ref_vector premises;
         std::vector<rational> values;
+        app_ref proof{m};
+        std::set<unsigned> proved_conflict;
         bool checked = false;
+        bool proof_attempted = false;
         lbool result = l_undef;
         struct constraint {
             expr *a, *b;
@@ -64,7 +69,7 @@ namespace ff {
         th_rewriter rw;
 
         imp(ast_manager &m, sort *s, params_ref const &p, solver_cache::imp *shared)
-            : m(m), ff(m), options(p), algebra(ff.modulus(s), m.limit(), options.ff_max_steps(),
+            : m(m), ff(m), options(p), params(p), algebra(ff.modulus(s), m.limit(), options.ff_max_steps(),
                                    options.ff_max_terms(), options.ff_bit_propagation(),
                                    options.ff_batch(), options.ff_sparse_witness()),
               local(m, s), enc(shared && !options.ff_compact_encoding() ? *shared : local),
@@ -363,10 +368,30 @@ namespace ff {
             throw default_exception("finite-field solver constraint has the wrong field");
         m_imp->add(a, b, equality);
     }
-    lbool solver::check() {
+    lbool solver::check(bool record_proof) {
         if (m_imp->checked)
             throw default_exception("finite-field solver problem has already been checked");
         m_imp->checked = true;
+        if (record_proof) {
+            m_imp->proof_attempted = true;
+            try {
+                m_imp->proof = record_refutation(m_imp->m, m_imp->premises, m_imp->params);
+            }
+            catch (exhausted const &) {
+                // A local recording limit says nothing about satisfiability.
+                // Candidate search may still produce a model, checked below
+                // against every original premise. Global cancellation remains
+                // binding, and UNSAT still requires recorded evidence.
+                if (m_imp->m.limit().is_canceled())
+                    throw;
+            }
+            if (m_imp->proof) {
+                // Every original premise is retained; no unrecorded normalization
+                // or frontend equality is smuggled in as an extra assumption.
+                for (unsigned i = 0; i < m_imp->premises.size(); ++i) m_imp->proved_conflict.insert(i);
+                return m_imp->result = l_false;
+            }
+        }
         m_imp->prepare();
         m_imp->values.resize(m_imp->num_variables);
         lbool result = m_imp->algebra.solve(m_imp->eqs, m_imp->neqs, m_imp->values);
@@ -377,7 +402,7 @@ namespace ff {
                 if ((m_imp->evaluate(a, m_imp->values) == m_imp->evaluate(b, m_imp->values)) != equality)
                     return l_undef;
         }
-        return m_imp->result = result;
+        return m_imp->result = (record_proof && result == l_false ? l_undef : result);
     }
     rational solver::value(expr *term) {
         if (m_imp->result != l_true)
@@ -387,9 +412,26 @@ namespace ff {
         return m_imp->evaluate(term, m_imp->values);
     }
     expr *solver::premise(unsigned index) const { return m_imp->premises.get(index); }
+    app* solver::evidence() const { return m_imp->proof; }
+    bool solver::refute() {
+        if (!m_imp->checked || m_imp->result == l_true)
+            throw default_exception("finite-field refutation requires an inconclusive or UNSAT check");
+        if (!m_imp->proof) {
+            if (m_imp->proof_attempted) return false;
+            m_imp->proof_attempted = true;
+            params_ref remaining(m_imp->params);
+            unsigned used = m_imp->algebra.steps(), budget = m_imp->options.ff_max_steps();
+            remaining.set_uint("ff.max_steps", used >= budget ? 0 : budget - used);
+            m_imp->proof = record_refutation(m_imp->m,m_imp->premises,remaining);
+        }
+        if (!m_imp->proof) return false;
+        for (unsigned i=0;i<m_imp->premises.size();++i) m_imp->proved_conflict.insert(i);
+        m_imp->result = l_false;
+        return true;
+    }
     std::set<unsigned> const &solver::conflict() const {
         SASSERT(m_imp->result == l_false);
-        return m_imp->algebra.conflict();
+        return m_imp->proof ? m_imp->proved_conflict : m_imp->algebra.conflict();
     }
     expr_ref root_lemmas::square_root_term(expr *e) {
         rational value, root;

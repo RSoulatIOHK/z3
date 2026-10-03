@@ -29,6 +29,7 @@ Author:
 #include "sat/smt/distinct_theory_checker.h"
 #include "sat/smt/tseitin_theory_checker.h"
 #include "params/solver_params.hpp"
+#include "ast/ff/ff_evidence.h"
 
 namespace euf {
 
@@ -284,6 +285,15 @@ namespace euf {
         }
     };
 
+    class ff_theory_checker : public theory_checker_plugin {
+        ast_manager& m;
+    public:
+        explicit ff_theory_checker(ast_manager& m) : m(m) {}
+        bool check(app* proof) override { return ff::check_refutation(m,proof); }
+        expr_ref_vector clause(app* proof) override { return ff::refutation_clause(m,proof); }
+        void register_plugins(theory_checker& pc) override { pc.register_plugin(symbol("ff-pac"),this); }
+    };
+
     theory_checker::theory_checker(ast_manager& m):
         m(m) {
         add_plugin(alloc(arith::theory_checker, m));
@@ -294,6 +304,7 @@ namespace euf {
         add_plugin(alloc(smt_theory_checker_plugin, m)); 
         add_plugin(alloc(tseitin::theory_checker, m));
         add_plugin(alloc(bv::theory_checker, m));
+        add_plugin(alloc(ff_theory_checker, m));
     }
 
     void theory_checker::add_plugin(theory_checker_plugin* p) {
