@@ -33,6 +33,12 @@ class atom_compiler {
         expr_mark seen;
         todo.push_back(root);
         unsigned nodes = 0;
+        bool direct = m.is_eq(root) && ff.is_ff(to_app(root)->get_arg(0));
+        if (direct) for (expr* arg : *to_app(root)) {
+            expr *c, *a, *b;
+            direct &= ff.is_numeral(arg) ||
+                (m.is_ite(arg, c, a, b) && ff.is_numeral(a) && ff.is_numeral(b));
+        }
         while (!todo.empty()) {
             if (!m.inc() || ++nodes > 2048) return false;
             expr* e = todo.back(); todo.pop_back();
@@ -42,7 +48,30 @@ class atom_compiler {
             if (ff.is_ff(e)) {
                 expr *c, *a, *b;
                 if (m.is_ite(e, c, a, b) && ff.is_numeral(a) && ff.is_numeral(b)) {
-                    if (!condition || c->get_id() < condition->get_id()) condition = c;
+                    // Comparing numeric ITEs needs only their two selectors;
+                    // expanding a compound condition here would undo sharing.
+                    if (direct) {
+                        if (!condition || c->get_id() < condition->get_id()) condition = c;
+                        continue;
+                    }
+                    // Split underlying Boolean atoms, not a compound gate
+                    // treated as a fresh independent selector. This retains
+                    // correlations such as a AND b sharing the input a.
+                    ptr_vector<expr> choices;
+                    expr_mark visited;
+                    choices.push_back(c);
+                    while (!choices.empty()) {
+                        if (!m.inc()) return false;
+                        expr* q = choices.back(); choices.pop_back();
+                        if (visited.is_marked(q)) continue;
+                        visited.mark(q, true);
+                        if (m.is_true(q) || m.is_false(q)) continue;
+                        bool logical = is_app(q) && to_app(q)->get_family_id() == m.get_basic_family_id() &&
+                            (m.is_not(q) || m.is_and(q) || m.is_or(q) || m.is_ite(q) ||
+                             m.is_implies(q) || m.is_xor(q) || (m.is_eq(q) && m.is_bool(to_app(q)->get_arg(0))));
+                        if (logical) for (expr* arg : *to_app(q)) choices.push_back(arg);
+                        else if (!condition || q->get_id() < condition->get_id()) condition = q;
+                    }
                     continue;
                 }
                 if (!(ff.is_numeral(e) || ff.is_add(e) || ff.is_mul(e) || ff.is_neg(e))) return false;

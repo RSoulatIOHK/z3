@@ -180,6 +180,23 @@ void tst_ff_native_proof() {
         expr_ref unknown(ff.mk_mul(left, foreign), m);
         ENSURE(!ff_simplify_circuit(m, unknown, output, pr, true));
     }
+    // A bit-domain constraint must not prevent substitution through an
+    // explicit Boolean ITE. Preserve the frozen prefix and exact source proof.
+    {
+        expr_ref zero(ff.mk_numeral(rational(0), field), m);
+        expr_ref domain(m.mk_eq(ff.mk_mul(x, x), x), m);
+        expr_ref definition(m.mk_eq(x, m.mk_ite(a, one, zero)), m);
+        base_dependent_expr_state state(m);
+        state.add(dependent_expr(m, b, m.mk_asserted(b), nullptr));
+        state.advance_qhead();
+        state.add(dependent_expr(m, domain, m.mk_asserted(domain), nullptr));
+        state.add(dependent_expr(m, definition, m.mk_asserted(definition), nullptr));
+        ff_wire_simplifier pass(m, state); pass.reduce();
+        ENSURE(state[0].fml() == b && state[1].fml() != domain);
+        proof_ref denied(m.mk_asserted(m.mk_not(state[1].fml())), m);
+        proof_ref root(m.mk_unit_resolution({state[1].pr(), denied}, m.mk_false()), m);
+        ENSURE(check_native(m, root) == 0);
+    }
     // A wide symbolic sum is still one input to a zero-test gate; its
     // arbitrary inverse witness must not hide the Boolean indicator.
     {
