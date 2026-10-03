@@ -114,6 +114,7 @@ add_executable(test-z3
   permutation.cpp
   finite_field.cpp
   ff_solver.cpp
+  ff_euf.cpp
   polynomial.cpp
   polynomial_factorization.cpp
   polynorm.cpp

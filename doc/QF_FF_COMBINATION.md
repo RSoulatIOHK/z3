@@ -9,8 +9,8 @@ constraints use Z3's existing theories. Each prime field is solved separately.
 
 `ast/ff/ff_solver.{h,cpp}` provides field reasoning independently of
 `smt::context`, enodes and SAT state. Its CMake component depends on `rewriter`
-and the `math/ff` algebra component. The SMT implementation uses this interface;
-a second SAT/SMT consumer has not yet been implemented.
+and the `math/ff` algebra component. Both `smt/theory_ff` and the opt-in
+`sat/smt/ff_solver` consumer use this interface.
 
 - `ff::solver` collects one field's ground equality/disequality premises,
   normalizes acyclic wire definitions with transitive support, encodes residual
@@ -34,10 +34,54 @@ Consequently, a SAT response from the core is a **field candidate**, not a compl
 mixed-theory model. An UNSAT response gives a conditional field lemma whose premises
 still need frontend justifications. Resource exhaustion is inconclusive.
 
-The API deliberately distinguishes these explanations from certificates. This
-extraction adds no proof recorder or trusted proof rule. Proof-aware normalization
-and scoped evidence connecting field deductions to SAT/congruence explanations
-remain follow-up work. Ordinary native proof mode remains unsupported.
+The API deliberately distinguishes explanations from certificates. `check(true)`
+selects evidence-producing native polynomial search over a definitional encoding
+of the original AST DAG. Wire elimination, polynomial operations and supported
+F4 steps record PAC multipliers; they are not reconstructed from a prior UNSAT
+answer. `evidence()` returns the resulting `ff-pac` proof AST. `refute()` can also
+attempt bounded, evidence-producing completion after an inconclusive ordinary
+check. The legacy `smt/theory_ff` adapter still uses ordinary non-recording checks;
+its native `produce-proofs` mode remains unsupported.
+
+### SAT/EUF consumer and proof boundary
+
+The experimental consumer in `sat/smt/ff_solver` is selected through the existing
+SAT/EUF mode, for example `(set-option :sat.euf true)` followed by
+`(check-sat-using smt)`, or `With(Tactic('sat'), euf=True).solver()` in Python.
+It preserves original field sorts, collects current e-graph equalities and signed
+SAT atoms, and arranges equal candidate values for shared terms. Model values are
+checked against every field premise. It supports the host frontend's UF, arithmetic,
+BV, array and datatype combinations; the host has no sequence theory plugin.
+
+The consumer also reuses the core's guarded root lemmas. In recording mode it
+certifies the original guard together with the negated root alternatives before
+asserting their clause.
+
+Local incompleteness may trigger exact domain clauses for fields of size at most
+31. Every enumerated value is a field element and the clause covers the entire
+field. Proof mode certifies these clauses too. Otherwise incompleteness returns
+`unknown`; this adapter has no BV fallback and is not selected by default.
+
+With `sat.smt.proof.check=true`, each field conflict carries a scoped `ff-pac`
+hint. The registered checker rebuilds the defining equations from the exact
+premises and replays input/multiply/add nodes to derive 1. It does not search for
+a missing proof. Native proof callbacks can retain these self-contained ASTs
+across scopes. The SAT/EUF proof layer supplies Boolean and congruence evidence
+for their premises; field premises are never accepted merely because they appeared
+in the equality engine. Foreign applications remain opaque in the field checker.
+
+This is a checked **field-lemma boundary**, not an end-to-end Lean or Alethe export.
+Other theories retain their existing proof-checker behavior, including SMT fallback
+for some rules. Recording-mode search can be less complete than ordinary solving:
+unsupported finite-domain deductions or exhausted evidence budgets return `unknown`.
+It does not turn every legacy optimization into a proof-producing operation.
+
+A separate generic SAT/SMT issue affects online checking in persistent user scopes:
+its checker can receive an unbound scope literal and crash. This was reproduced on
+integer-only constraints without finite fields. The persistent native regression
+therefore replays field hints through the proof callback; fresh solver runs also
+exercise the online checker. Fixing that general scope-binding issue is separate
+from this finite-field adapter.
 
 The `test-z3 ff_solver` suite exercises the interface without an SMT context:
 124 exhaustively checked problems over F2/F3/F7, independent checking of conflict

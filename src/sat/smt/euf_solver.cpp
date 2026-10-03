@@ -31,6 +31,7 @@ Author:
 #include "sat/smt/sls_solver.h"
 #include "sat/smt/recfun_solver.h"
 #include "sat/smt/specrel_solver.h"
+#include "sat/smt/ff_solver.h"
 
 namespace euf {
 
@@ -157,6 +158,8 @@ namespace euf {
             ext = alloc(dt::solver, *this, fid);
         else if (rf.get_family_id() == fid)
             ext = alloc(recfun::solver, *this);
+        else if (ff_util(m).get_fid() == fid)
+            ext = alloc(ff_sat::solver, *this);
         else if (sp.get_family_id() == fid)
             ext = alloc(specrel::solver, *this, fid);
         

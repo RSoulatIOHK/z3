@@ -43,7 +43,7 @@ def sequences(factory, prime=7):
           unsat, 'array of sequences field roots')
 
 
-def examples(factory):
+def examples(factory, include_sequences=True):
     F = FiniteFieldSort(7)
     x, y = FiniteFieldElems('x y', F)
     one, six = FiniteFieldVal(1, F), FiniteFieldVal(6, F)
@@ -74,7 +74,8 @@ def examples(factory):
     B = Array('B', IntSort(), F)
     check(factory, [i == 2, Select(B, i)*Select(B, i) == 3], unsat, 'field array range')
     check(factory, [Select(Store(B, i, x), i) == x, x*x == 2], sat, 'store model')
-    sequences(factory)
+    if include_sequences:
+        sequences(factory)
     Box = Datatype('FFBox')
     Box.declare('box', ('value', F))
     Box = Box.create()

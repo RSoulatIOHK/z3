@@ -12,6 +12,34 @@ first-milestone format and shell command described below remain supported.
 The [third milestone](QF_FF_BOOLEAN_PROOFS.md) adds checked Boolean resolution,
 field/Boolean ITEs and an iterative shared-term front end to that pipeline.
 
+## Shared-core recording and SAT/EUF hints
+
+The [SAT/EUF consumer](QF_FF_COMBINATION.md#sat-euf-consumer-and-proof-boundary)
+uses the extracted AST-level core and attaches replayable `ff-pac` hints to field
+conflicts. This imports PR2's native polynomial observers (including wire
+substitution and F4 evidence) into the refactored `math/ff` layout. Without an
+observer, native solving retains its existing algorithms.
+
+At the AST boundary, arithmetic DAG nodes receive defining equations, signed
+premises are preserved, and a disequality `f != 0` receives an inverse witness
+`w*f - 1 = 0`. The encoding uses field axioms `v^p-v=0` for p <= 31, including
+extension variables. Larger fields omit these high-degree equations, which can
+reduce proof coverage but cannot authorize an invalid refutation. The proof AST
+contains the exact premises and the polynomial-operation DAG; the checker rebuilds
+all input and extension equations before replay. SAT models use the ordinary
+original-input validation path. Missing evidence is inconclusive.
+
+These are native clause hints, with a registered C++ replay checker and scoped
+proof-callback ownership. They do not yet provide a complete mixed-theory Alethe
+or Lean export, do not enable `get-proof` on the legacy SMT adapter, and do not
+certify arbitrary outer preprocessing. Other theory checkers retain their existing
+behavior. See the combination document for the independent generic online-checker
+limitation in persistent user scopes.
+
+Tests reject both arithmetic corruption and rebinding a valid derivation to
+satisfiable premises. Additional tests cover disequality witnesses, field axioms,
+resource exhaustion, native/F4 operation replay and retained hints after push/pop.
+
 ## Implemented: polynomial refutations from original equations
 
 Use `(ff-certify)` instead of `(check-sat)` for a single-field conjunction of
@@ -28,7 +56,8 @@ explicit error. This command does not alter assertions or the solver result.
 The initial interface is shell-only. The reusable C++ `ff::certify` API takes
 polynomial equations; no C/Python solver API or Z3 native proof rule is added.
 Its output object is replaced only on success, including after cancellation.
-The ordinary solver has no new recording branch or per-polynomial proof data.
+The standalone command retains scalar reconstruction by default. The shared
+core now has the separate recording mode described below.
 
 ```sh
 build-ff-cmake/z3 tests/finite_field/fixtures/certificates/large-prime.smt2 > /tmp/large.ffcert
