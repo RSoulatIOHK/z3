@@ -16,6 +16,7 @@ Author:
 
 --*/
 #include "tactic/portfolio/ff_tactic.h"
+#include "tactic/arith/ff_solve_tactic.h"
 #include "tactic/probe.h"
 #include "tactic/tactical.h"
 #include "tactic/smtlogics/smt_tactic.h"
@@ -59,4 +60,13 @@ bool has_ff_terms(ast_manager &m, expr *e) {
     auto visit = [&](expr *e) { found |= ff.is_ff(e); };
     for_each_expr(visit, e);
     return found;
+}
+
+// One strategy for both explicit QF_FF and field terms in unrestricted goals.
+tactic *mk_ff_tactic(ast_manager &m, params_ref const &p) {
+    // Keep the bounded specialized strategies before the general SMT fallback.
+    // Their removal must be measured separately from this consolidation.
+    return annotate_tactic("ff-tactic",
+                            and_then(mk_ff_unique_tactic(m, p), mk_ff_simplify_tactic(m, p),
+                                     or_else(mk_ff_solve_tactic(m, p), mk_ff_sat_tactic(m, p), mk_ff_smt_tactic(m, p))));
 }
