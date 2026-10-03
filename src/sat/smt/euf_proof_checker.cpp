@@ -289,6 +289,7 @@ namespace euf {
         ast_manager& m;
     public:
         explicit ff_theory_checker(ast_manager& m) : m(m) {}
+        bool requires_check() const override { return true; }
         bool check(app* proof) override { return ff::check_refutation(m,proof); }
         expr_ref_vector clause(app* proof) override { return ff::refutation_clause(m,proof); }
         void register_plugins(theory_checker& pc) override { pc.register_plugin(symbol("ff-pac"),this); }
@@ -322,6 +323,11 @@ namespace euf {
         app* a = to_app(e);
         theory_checker_plugin* p = nullptr;
         return m_map.find(a->get_decl()->get_name(), p) && p->check(a);
+    }
+
+    bool theory_checker::requires_check(expr* e) {
+        theory_checker_plugin* p = nullptr;
+        return e && is_app(e) && m_map.find(to_app(e)->get_name(), p) && p->requires_check();
     }
 
     expr_ref_vector theory_checker::clause(expr* e) {
@@ -471,6 +477,11 @@ namespace euf {
             }
         }
         
+        if (m_checker.requires_check(proof_hint)) {
+            log_verified(proof_hint, false);
+            throw default_exception("required theory certificate did not verify");
+        }
+
         // extract a simplified verification condition in case proof validation does not work.
         // quantifier instantiation can be validated as follows:
         // If quantifier instantiation claims that (forall x . phi(x)) => psi using instantiation x -> t

@@ -42,5 +42,5 @@ if __name__ == '__main__':
         assert child.returncode == 0 and 'FF_EUF_PASS' in child.stdout, child.stdout + child.stderr
         assert '+ff-pac ' in child.stdout, child.stdout
         assert '-ff-pac ' not in child.stdout, child.stdout
-        assert '(error' not in child.stdout and 'not verified' not in child.stdout, child.stdout
+        assert '(error' not in child.stdout and 'did not verify' not in child.stdout and 'not verified' not in child.stdout, child.stdout
         print('FF_EUF_PROOFS_PASS')

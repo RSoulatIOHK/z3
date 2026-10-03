@@ -25,6 +25,26 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(result['returncode'], 7)
             self.assertIn('intentional failure', (out / 'failure.log').read_text())
 
+    def test_native_zero_exit_requires_completion(self):
+        for message in ['', 'did not verify: l_true', 'PASS',
+                        'PASS\n(test wrong_test :time 0.0)']:
+            with self.subTest(message=message), tempfile.TemporaryDirectory() as temp:
+                result = execute('native-smt_proof_checker',
+                                 [sys.executable, '-c', 'print(' + repr(message) + ')'],
+                                 dict(os.environ), Path(temp), 10)
+                self.assertEqual(result['status'], 'failed')
+                self.assertEqual(result['returncode'], 0)
+
+    def test_native_completed_negative_tests_are_allowed(self):
+        # Tests deliberately exercising rejected proofs may print diagnostics;
+        # only reaching their final completion marker demonstrates success.
+        with tempfile.TemporaryDirectory() as temp:
+            message = 'did not verify: l_true\nPASS\n(test smt_proof_checker :time 0.0)'
+            result = execute('native-smt_proof_checker',
+                             [sys.executable, '-c', 'print(' + repr(message) + ')'],
+                             dict(os.environ), Path(temp), 10)
+            self.assertEqual(result['status'], 'passed')
+
     def test_timeout_is_failure(self):
         with tempfile.TemporaryDirectory() as temp:
             result = execute('timeout', [sys.executable, '-c', 'import time; time.sleep(60)'],

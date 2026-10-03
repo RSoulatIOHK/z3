@@ -25,7 +25,7 @@ CORE = [
 PROOFS = ['test_ff_certificates.py', 'test_ff_proof_pipeline.py', 'test_ff_boolean_proof.py']
 CLI = {'test_qfff.py', 'test_ff_backend_recovery.py', 'test_ff_integration.py'}
 EXTERNAL = {'test_ff_proof_pipeline.py', 'test_ff_boolean_proof.py'}
-NATIVE = ['finite_field', 'ff_solver', 'ff_euf', 'ast', 'smt_context', 'smt2print_parse', 'api', 'arith_rewriter']
+NATIVE = ['finite_field', 'ff_solver', 'ff_euf', 'smt_proof_checker', 'smt_proof_weakening', 'sat_smt_proof_scope', 'ast', 'smt_context', 'smt2print_parse', 'api', 'arith_rewriter']
 
 
 def positive(value):
@@ -56,6 +56,17 @@ def execute(name, command, env, output, timeout):
                 status = 'timeout'
         except OSError as error:
             log.write(str(error) + '\n')
+    # Native tests can terminate early (including an erroneous exit(0)).
+    # Require the named test's completion record, not just its process status.
+    if status == 'passed' and name.startswith('native-'):
+        test_name = name.removeprefix('native-')
+        completed = passed = False
+        with (output / (name + '.log')).open() as log:
+            for line in log:
+                passed |= line.strip() == 'PASS'
+                completed |= line.startswith('(test ' + test_name + ' :time ')
+        if not (passed and completed):
+            status = 'failed'
     result = dict(name=name, status=status, returncode=code,
                   seconds=time.monotonic() - started, command=command)
     print(f'{status.upper():7} {name} ({result["seconds"]:.2f}s)', flush=True)
