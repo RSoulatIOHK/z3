@@ -50,7 +50,6 @@ namespace ff {
         unsigned &num_variables;
         std::vector<ff::polynomial> eqs, neqs;
         expr_ref_vector premises;
-        obj_hashtable<expr> premise_set;
         std::vector<rational> values;
         app_ref proof{m};
         std::set<unsigned> proved_conflict;
@@ -340,14 +339,24 @@ namespace ff {
             return cache.find(root);
         }
 
+        std::set<unsigned> evidence_inputs(expr_ref_vector& recorded) {
+            obj_hashtable<expr> seen;
+            std::set<unsigned> indices;
+            for (unsigned i = 0; i < premises.size(); ++i) {
+                expr* premise = premises.get(i);
+                if (!seen.contains(premise)) {
+                    seen.insert(premise);
+                    recorded.push_back(premise);
+                    indices.insert(i);
+                }
+            }
+            return indices;
+        }
+
         void add(expr *a, expr *b, bool equality) {
             expr_ref premise(m.mk_eq(a, b), m);
             if (!equality)
                 premise = m.mk_not(premise);
-            // Equality-engine edges and assigned atoms can supply the same
-            // signed premise. Keep one copy and one stable evidence index.
-            if (premise_set.contains(premise)) return;
-            premise_set.insert(premise);
             premises.push_back(premise);
             inputs.push_back({a, b, equality});
         }
@@ -382,12 +391,18 @@ namespace ff {
             m_imp->proof_attempted = true;
             // Proof-dependent rows cannot enter the ordinary basis cache.
             m_imp->algebra.set_basis_cache(nullptr);
+            // Equality-engine edges and assigned atoms can duplicate premises.
+            // Deduplicate the evidence encoding only: changing the ordinary
+            // equation sequence also changes its bounded elimination/search
+            // heuristics. Conflict indices still refer to the original inputs.
+            expr_ref_vector recorded_premises(m_imp->m);
+            auto recorded_indices = m_imp->evidence_inputs(recorded_premises);
             m_imp->recording = std::make_unique<recorded_problem>(
-                m_imp->m, m_imp->local.field, m_imp->algebra, m_imp->premises);
+                m_imp->m, m_imp->local.field, m_imp->algebra, recorded_premises);
             auto result = m_imp->recording->check();
             m_imp->proof = m_imp->recording->evidence();
             if (result == l_false)
-                for (unsigned i = 0; i < m_imp->premises.size(); ++i) m_imp->proved_conflict.insert(i);
+                m_imp->proved_conflict = std::move(recorded_indices);
             return m_imp->result = result;
         }
         m_imp->prepare();
@@ -420,10 +435,13 @@ namespace ff {
             params_ref remaining(m_imp->params);
             unsigned used = m_imp->algebra.steps(), budget = m_imp->options.ff_max_steps();
             remaining.set_uint("ff.max_steps", used >= budget ? 0 : budget - used);
-            m_imp->proof = record_refutation(m_imp->m,m_imp->premises,remaining);
+            expr_ref_vector recorded_premises(m_imp->m);
+            auto recorded_indices = m_imp->evidence_inputs(recorded_premises);
+            m_imp->proof = record_refutation(m_imp->m,recorded_premises,remaining);
+            if (m_imp->proof)
+                m_imp->proved_conflict = std::move(recorded_indices);
         }
         if (!m_imp->proof) return false;
-        for (unsigned i=0;i<m_imp->premises.size();++i) m_imp->proved_conflict.insert(i);
         m_imp->result = l_false;
         return true;
     }

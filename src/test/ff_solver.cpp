@@ -234,6 +234,19 @@ static void evidence_contract() {
         diseq.add(x,one,true);diseq.add(x,one,false);
         ENSURE(diseq.check(true)==l_false);
         ENSURE(ff::check_refutation(m,diseq.evidence()));
+        // Duplicate original inputs retain their indices for ordinary solving,
+        // while recorded clauses use one representative for each exact premise.
+        ff::solver duplicates(m,field,params_ref());
+        duplicates.add(x,one,true);
+        duplicates.add(x,one,true);
+        duplicates.add(x,one,false);
+        duplicates.add(x,one,false);
+        ENSURE(duplicates.check(true)==l_false);
+        ENSURE(duplicates.conflict() == std::set<unsigned>({0, 2}));
+        ENSURE(ff::refutation_clause(m,duplicates.evidence()).size()==2);
+        ENSURE(ff::check_refutation(m,duplicates.evidence()));
+        ENSURE(duplicates.refute());
+        ENSURE(duplicates.conflict() == std::set<unsigned>({0, 2}));
         // SAT does not produce a contradictory certificate.
         ff::solver consistent(m,field,params_ref());
         consistent.add(x,one,true);
