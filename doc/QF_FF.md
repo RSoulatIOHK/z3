@@ -3,7 +3,7 @@
 This branch adds native prime-field syntax, models, C/C++/Python interfaces,
 and an algebraic solver to Z3. Large-prime performance is part of the v1 target;
 bit-vector lowering is the complete fallback and a correctness reference.
-V2 has begun with standalone polynomial certificates; complete solver proofs
+V2 includes default native proof recording and standalone polynomial certificates; complete external solver proofs
 remain under development.
 
 ## Current interface
@@ -149,8 +149,11 @@ moduli receive probable-prime screening, not primality certification.
 
 Standalone reconstruction and independent checking are described in
 [QF_FF_CERTIFICATES.md](QF_FF_CERTIFICATES.md) and the
-[Alethe/PAC pipeline](QF_FF_PROOF_PIPELINE.md). They do not imply native Z3
-`get-proof` support for the entire field solver. Mixed-theory proofs, root/field
+[Alethe/PAC pipeline](QF_FF_PROOF_PIPELINE.md). Default `produce-proofs` now
+records native FF evidence through both SMT adapters, with proof-capable wire
+and equality preprocessing. Native field leaves can be exported and checked;
+this is not yet an external Alethe proof of the whole native SMT trace.
+Root/field
 closure, uniqueness and small-field-search traces remain incomplete. Conflict
 premise sets alone are not certificates.
 
