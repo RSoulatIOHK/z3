@@ -98,6 +98,9 @@ class Exporter:
         Field equalities are opaque atoms. This cannot supply missing algebraic
         reasoning. Only native premise facts participate; no input is re-solved.
         """
+        for fact, name in parents:
+            if fact == goal: return name
+        if self.g.nodes[goal][0] == 'true': return self.step(['true'], 'true')
         prefix = self.name('bool') + '_'
         atoms, asts = {}, []
         def term(i):
@@ -335,6 +338,30 @@ class Exporter:
         clause, unit = self.fold_clause(assumptions, anchor)
         return self.boolean(proof.arg(0), [(clause, unit)])
 
+    def unit_resolution(self, fact, parents):
+        # Most native SAT steps already are Alethe resolution. Preserve that
+        # trace directly instead of rebuilding a local Tseitin proof per step.
+        # First check the literal sets; unusual native weakening still goes
+        # through the bounded propositional elaborator below.
+        if len(parents) < 2: return self.boolean(fact, parents)
+        first, first_name = parents[0]
+        lit = lambda e: self.g.lit(self.node(e))
+        direct = len(parents) == 2 and lit(first) == -lit(parents[1][0])
+        atoms = list(first.children()) if z3.is_or(first) and not direct else [first]
+        residual = set(map(lit, atoms))
+        for value, _ in parents[1:]:
+            if -lit(value) not in residual: return self.boolean(fact, parents)
+            residual.remove(-lit(value))
+        desired = [] if z3.is_false(fact) else list(fact.children()) if z3.is_or(fact) else [fact]
+        if residual != set(map(lit, desired)): return self.boolean(fact, parents)
+        premise = self.step([self.ref(a) for a in atoms], 'or', [first_name]) if z3.is_or(first) and not direct else first_name
+        clause = self.step([self.ref(a) for a in desired], 'resolution', [premise] + [name for _,name in parents[1:]])
+        if not desired: return self.step(['false'], 'weakening', [clause])
+        if len(desired) == 1: return clause
+        target = self.ref(fact)
+        folds = [self.step([target, f'(not {self.ref(a)})'], 'or_neg', args=[str(i)]) for i,a in enumerate(desired)]
+        return self.step([target], 'resolution', [clause] + folds)
+
     def convert(self, proof, env=None, depth=0):
         env = {} if env is None else env
         require(depth < 256, 'native proof nesting limit')
@@ -422,6 +449,16 @@ class Exporter:
             elif kind in (z3.Z3_OP_PR_REWRITE, z3.Z3_OP_PR_COMMUTATIVITY):
                 require(not parents, 'rewrite with parents')
                 result = self.rewrite(fact)
+            elif kind == z3.Z3_OP_PR_UNIT_RESOLUTION:
+                result = self.unit_resolution(fact, parents)
+            elif kind == z3.Z3_OP_PR_MODUS_PONENS and len(parents) == 2 and z3.is_eq(parents[1][0]) and parents[0][0].eq(parents[1][0].arg(0)) and fact.eq(parents[1][0].arg(1)):
+                result = self.transfer(self.ref(parents[0][0]), self.ref(fact), parents[1][1], parents[0][1])
+            elif kind in (z3.Z3_OP_PR_AND_ELIM, z3.Z3_OP_PR_NOT_OR_ELIM) and len(parents) == 1:
+                source, name = parents[0]
+                parts = source.arg(0).children() if kind == z3.Z3_OP_PR_NOT_OR_ELIM and z3.is_not(source) and z3.is_or(source.arg(0)) else source.children() if z3.is_and(source) else []
+                expected = fact.arg(0) if kind == z3.Z3_OP_PR_NOT_OR_ELIM and z3.is_not(fact) else fact
+                index = next((i for i,a in enumerate(parts) if a.eq(expected)), None)
+                result = self.boolean(fact, parents) if index is None else self.step([self.ref(fact)], 'and' if kind == z3.Z3_OP_PR_AND_ELIM else 'not_or', [name], [str(index)])
             elif kind == z3.Z3_OP_PR_DEF_AXIOM:
                 require(not parents, 'Boolean axiom with parents')
                 result = self.ite_axiom(fact)
