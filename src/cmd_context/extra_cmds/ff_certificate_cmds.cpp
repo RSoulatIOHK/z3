@@ -19,6 +19,7 @@ Author:
 #include "cmd_context/cmd_context.h"
 #include "cmd_context/parametric_cmd.h"
 #include "ast/ff_decl_plugin.h"
+#include "ast/ff/ff_evidence.h"
 #include "ast/proofs/proof_checker.h"
 #include "ast/proofs/proof_utils.h"
 #include "ast/rewriter/th_rewriter.h"
@@ -193,7 +194,15 @@ namespace {
             }
             if (!proof_utils::is_closed(m, root)) throw cmd_exception("native proof has open hypotheses");
             visited.reset(); todo.push_back(root);
-            th_rewriter rw(m);
+            // Native Boolean clauses include Tseitin tautologies and De Morgan
+            // equivalences. Normalize both sides in the same Boolean form and
+            // use local context rewriting; no solver or field reconstruction
+            // is invoked to discharge these obligations.
+            params_ref rewrite_params;
+            rewrite_params.set_bool("elim_and", true);
+            rewrite_params.set_bool("local_ctx", true);
+            rewrite_params.set_uint("local_ctx_limit", 1000000);
+            th_rewriter rw(m, rewrite_params);
             unsigned fields = 0;
             while (!todo.empty()) {
                 if (!m.inc()) throw cmd_exception("native proof check canceled");
@@ -212,7 +221,8 @@ namespace {
                     case PR_DEF_AXIOM: {
                         expr_ref reduced(m);
                         rw(m.get_fact(a), reduced);
-                        if (!m.is_true(reduced)) throw cmd_exception("native Boolean axiom was not discharged");
+                        if (!m.is_true(reduced) && !ff::check_boolean_tautology(m, reduced))
+                            throw cmd_exception("native Boolean axiom was not discharged");
                         break;
                     }
                     case PR_SYMMETRY: case PR_TRANSITIVITY: case PR_TRANSITIVITY_STAR:
@@ -250,7 +260,8 @@ namespace {
             for (expr *condition : conditions) {
                 expr_ref reduced(m);
                 rw(condition, reduced);
-                if (!m.is_true(reduced)) throw cmd_exception("native rewrite obligation was not discharged");
+                if (!m.is_true(reduced) && !ff::check_boolean_tautology(m, reduced))
+                    throw cmd_exception("native rewrite obligation was not discharged");
             }
             ctx.regular_stream() << "(ff-native-proof-checked :field-lemmas " << fields << ")\n";
         }

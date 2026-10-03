@@ -31,6 +31,10 @@ run(pre + '(declare-const y (_ FiniteField 7))\n(assert (= (ff.add x #f1m7) y))\
 # Boolean composition and scope restoration remain bound to current input.
 run(pre + '(declare-const b Bool)\n(assert (or b (= (ff.mul x x) #f3m7)))\n'
     '(assert (not b))\n' + check, 1, field=True)
+run(pre + '(declare-const a Bool) (declare-const b Bool)\n'
+    '(assert (= a (not b)))\n(assert (= b a))\n' + check, 1)
+run(pre + '(assert (or (= x #f0m7) (= x #f1m7)))\n'
+    '(assert (not (= x #f1m7)))\n(assert (not (= x #f0m7)))\n' + check, 1)
 run(pre + '(push)\n' + root + check + '(pop)\n(assert (= x #f0m7))\n'
     '(push)\n(assert (= x #f1m7))\n' + check + '(pop)\n(check-sat)\n', 2)
 run('(set-logic QF_FF)\n(declare-const x (_ FiniteField 7))\n' + root + check,
