@@ -38,7 +38,7 @@ Its current profile is pure ground, single-prime-field SMT with Boolean
 connectives and field ITEs. Arrays, sequences, field-valued UFs and mixed fields
 are outside this **external export** profile; native proof production still
 supports the existing theory combinations. Lean checking is not implemented.
-Fifteen focused whole-proof regressions exercise Boolean reasoning, wire
+Seventeen focused whole-proof regressions exercise Boolean reasoning, wire
 elimination, domains, both indicator polarities, small-field roots and a
 127-bit prime, nested input conjunctions and n-ary field syntax, with actual Carcara/Pacheck acceptance and mutation rejection.
 This is not a claim of full FMCAD external-checking coverage.

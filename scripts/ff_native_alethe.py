@@ -250,6 +250,9 @@ class Exporter:
                 conj = self.transfer('true', f'(and true {target})', identity, truth)
                 proved = self.step([target], 'and', [conj], ['1'])
                 parents.append((meaning, proved))
+                for branch in [a, b]:
+                    symmetric = (e == branch) == (branch == e)
+                    parents.append((symmetric, self.step([self.ref(symmetric)], 'eq_symmetric')))
         return self.boolean(goal, parents)
 
     def fold_clause(self, assumptions, anchor):
@@ -414,9 +417,9 @@ class Exporter:
                      z3.Z3_OP_PR_MONOTONICITY:'cong'}
             if kind in rules:
                 result = self.step([self.ref(fact)], rules[kind], [name for _,name in parents])
-            elif kind == z3.Z3_OP_PR_REWRITE and z3.is_eq(fact) and not z3.is_bool(fact.arg(0)):
+            elif kind in (z3.Z3_OP_PR_REWRITE, z3.Z3_OP_PR_COMMUTATIVITY) and z3.is_eq(fact) and not z3.is_bool(fact.arg(0)):
                 result = self.step([self.ref(fact)], 'poly_simp')
-            elif kind == z3.Z3_OP_PR_REWRITE:
+            elif kind in (z3.Z3_OP_PR_REWRITE, z3.Z3_OP_PR_COMMUTATIVITY):
                 require(not parents, 'rewrite with parents')
                 result = self.rewrite(fact)
             elif kind == z3.Z3_OP_PR_DEF_AXIOM:
