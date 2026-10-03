@@ -524,8 +524,11 @@ void ff_wire_simplifier::reduce() {
             (h.is_zero() || h.is_one()) && (l.is_zero() || l.is_one());
         // Keep bit variables out of wide affine elimination, but an explicit
         // x=ite(c,0,1) definition preserves their domain and Boolean selector.
+        // A free-constant alias is also safe: substituting x=y transports
+        // x*x=x to y*y=y, keeping the bit domain without expanding arithmetic.
         // The usual occurs check still excludes a self-referential condition.
-        if (!is_uninterp_const(v) || !ff.is_ff(v) || (bits.contains(v) && !boolean_wire) || ids.contains(v) || occurs(v, rhs))
+        if (!is_uninterp_const(v) || !ff.is_ff(v) ||
+            (bits.contains(v) && !boolean_wire && !is_uninterp_const(rhs)) || ids.contains(v) || occurs(v, rhs))
             continue;
         ids.insert(v, static_cast<unsigned>(vars.size()));
         vars.push_back(v);

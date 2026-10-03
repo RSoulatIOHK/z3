@@ -197,6 +197,20 @@ void tst_ff_native_proof() {
         proof_ref root(m.mk_unit_resolution({state[1].pr(), denied}, m.mk_false()), m);
         ENSURE(check_native(m, root) == 0);
     }
+    // Alias elimination transports, rather than drops, a bit-domain assertion.
+    {
+        expr_ref domain(m.mk_eq(ff.mk_mul(x, x), x), m);
+        expr_ref alias(m.mk_eq(x, y), m);
+        expr_ref expected(m.mk_eq(ff.mk_mul(y, y), y), m);
+        base_dependent_expr_state state(m);
+        state.add(dependent_expr(m, domain, m.mk_asserted(domain), nullptr));
+        state.add(dependent_expr(m, alias, m.mk_asserted(alias), nullptr));
+        ff_wire_simplifier pass(m, state); pass.reduce();
+        ENSURE(state[0].fml() == expected);
+        proof_ref denied(m.mk_asserted(m.mk_not(expected)), m);
+        proof_ref root(m.mk_unit_resolution({state[0].pr(), denied}, m.mk_false()), m);
+        ENSURE(check_native(m, root) == 0);
+    }
     // A wide symbolic sum is still one input to a zero-test gate; its
     // arbitrary inverse witness must not hide the Boolean indicator.
     {
