@@ -36,6 +36,7 @@ class Exporter:
         self.w = bp.Writer(self.g)
         self.w.lines = []  # Emit all shared term definitions after elaboration.
         self.files, self.memo, self.counter = {}, {}, 0
+        self.ast_nodes, self.ast_pins = {}, []
         self.original = {i: None for i in self.g.assertions}
         for i in self.original:
             name = self.name('assertion')
@@ -49,9 +50,38 @@ class Exporter:
         require(self.counter < 50000, 'native export step limit')
         return f'{self.g.prefix}{kind}{self.counter}'
 
+    def node(self, expr):
+        # Read the typed AST directly. The pretty printer can flatten different
+        # associative subterms depending on let-sharing, so its text must not
+        # define equality of proof atoms. Pins prevent native AST-id reuse.
+        pending = [expr]
+        names = {z3.Z3_OP_TRUE:'true', z3.Z3_OP_FALSE:'false', z3.Z3_OP_NOT:'not',
+                 z3.Z3_OP_AND:'and', z3.Z3_OP_OR:'or', z3.Z3_OP_IMPLIES:'=>',
+                 z3.Z3_OP_XOR:'xor', z3.Z3_OP_ITE:'ite', z3.Z3_OP_EQ:'=',
+                 z3.Z3_OP_FF_ADD:'ff.add', z3.Z3_OP_FF_MUL:'ff.mul', z3.Z3_OP_FF_NEG:'ff.neg'}
+        while pending:
+            e = pending[-1]; key = e.get_id()
+            if key in self.ast_nodes: pending.pop(); continue
+            require(z3.is_app(e), 'native term must be ground')
+            missing = [a for a in e.children() if a.get_id() not in self.ast_nodes]
+            if missing: pending.extend(missing); continue
+            kind = e.decl().kind()
+            if kind == z3.Z3_OP_UNINTERPRETED:
+                require(e.num_args() == 0, 'native external profile excludes field-valued functions')
+                name = fc.symbol(e.sexpr())
+                require(name in self.g.names, 'native term has no original declaration')
+                value = self.g.names[name]
+            elif kind == z3.Z3_OP_FF_NUM:
+                require(e.sort().size() == self.g.p, 'native field differs from original input')
+                value = self.g.node('num', data=(e.as_long(), e.sort().size()))
+            else:
+                require(kind in names, 'unsupported native term operator: ' + str(e.decl().name()))
+                value = self.g.node(names[kind], [self.ast_nodes[a.get_id()] for a in e.children()])
+            self.ast_nodes[key] = value; self.ast_pins.append(e); pending.pop()
+        return self.ast_nodes[expr.get_id()]
+
     def ref(self, expr):
-        # Parsing is only AST serialization, not a simplification or solver call.
-        return self.g.ref(self.g.expand(fc.parse(expr.sexpr(), max_depth=100000)[0]))
+        return self.g.ref(self.node(expr))
 
     def step(self, terms, rule, parents=(), args=None, **kw):
         return self.w.step(terms, rule, parents, args, **kw)
@@ -60,6 +90,9 @@ class Exporter:
         return self.w.transfer(source, target, equality, premise)
 
     def boolean(self, goal, parents=()):
+        return self.boolean_ids(self.node(goal), [(self.node(f), name) for f, name in parents])
+
+    def boolean_ids(self, goal, parents=()):
         """Elaborate a local propositional inference as checked resolution.
 
         Field equalities are opaque atoms. This cannot supply missing algebraic
@@ -67,22 +100,17 @@ class Exporter:
         """
         prefix = self.name('bool') + '_'
         atoms, asts = {}, []
-        def term(e):
-            k = e.decl().kind()
-            if z3.is_true(e): return 'true'
-            if z3.is_false(e): return 'false'
-            op = {z3.Z3_OP_AND: 'and', z3.Z3_OP_OR: 'or', z3.Z3_OP_NOT: 'not',
-                  z3.Z3_OP_IMPLIES: '=>', z3.Z3_OP_XOR: 'xor', z3.Z3_OP_ITE: 'ite'}.get(k)
-            if z3.is_eq(e) and z3.is_bool(e.arg(0)): op = '='
-            if op in ('and', 'or') and e.num_args() < 2:
-                return term(e.arg(0)) if e.num_args() else ('true' if op == 'and' else 'false')
-            if op:
-                return '(' + op + ' ' + ' '.join(term(a) for a in e.children()) + ')'
-            key = e.get_id()
-            if key not in atoms:
-                require(len(atoms) < 64, 'local Boolean atom limit')
-                atoms[key] = prefix + 'atom' + str(len(atoms)); asts.append(e)
-            return atoms[key]
+        def term(i):
+            op, args, _ = self.g.nodes[i]
+            if op in ('true', 'false'): return op
+            logical = op in ('and', 'or', 'not', '=>', 'xor') or op == 'ite' and self.g.typ(i) == 0
+            logical |= op == '=' and self.g.typ(args[0]) == 0
+            if logical:
+                return '(' + op + ' ' + ' '.join(term(a) for a in args) + ')'
+            if i not in atoms:
+                require(len(atoms) < 4096, 'local Boolean atom limit')
+                atoms[i] = prefix + 'atom' + str(len(atoms)); asts.append(i)
+            return atoms[i]
         facts = [term(f) for f, _ in parents] + ['(not ' + term(goal) + ')']
         text = ''.join(f'(declare-const {n} Bool)\n' for n in atoms.values())
         text += ''.join('(assert ' + f + ')\n' for f in facts)
@@ -90,12 +118,12 @@ class Exporter:
         # Substitute the actual opaque atom terms in the printed proof. Their
         # truth values remain unconstrained throughout propositional search.
         for a in asts:
-            i = g.names[atoms[a.get_id()]]
-            g.nodes[i] = ('var', (), (self.ref(a), 0))
+            i = g.names[atoms[a]]
+            g.nodes[i] = ('var', (), (self.g.ref(a), 0))
         base = bp.Clauses(g)
         search = bp.Search(base.clauses)
         sat, root = search.search()
-        require(not sat, 'native step needs non-propositional evidence: ' + goal.sexpr()[:500])
+        require(not sat, 'native step needs non-propositional evidence: ' + self.g.ref(goal))
         writer = bp.Writer(g)
         anchor = self.name('boolean_lemma')
         writer.emit(f'(anchor :step {anchor})')
@@ -112,7 +140,7 @@ class Exporter:
             writer.names.append(writer.step([g.literal(x) for x in value], 'resolution',
                                             [writer.names[a], writer.names[b]]))
         writer.step([], 'reordering', [writer.names[root]])
-        target = self.ref(goal)
+        target = self.g.ref(goal)
         assumption = f'{g.prefix}a{len(parents)}'
         writer.step([f'(not (not {target}))', 'false'], 'subproof', name=anchor, discharge=[assumption])
         outside_false = writer.step(['(not false)'], 'false')
@@ -182,7 +210,10 @@ class Exporter:
                 else:
                     proved = self.constant_disequality(reduced)
                     parents.append((z3.Not(reduced), proved))
-        return self.boolean(goal, parents)
+        try:
+            return self.boolean(goal, parents)
+        except fc.Invalid as error:
+            raise fc.Invalid(str(error) + ': ' + goal.sexpr()[:1200]) from error
 
     def constant_disequality(self, equation):
         # Carcara's generic eq_simplify does not evaluate finite-field
@@ -308,9 +339,47 @@ class Exporter:
         if key in self.memo: return self.memo[key]
         kind = proof.decl().kind(); fact = proof.arg(proof.num_args() - 1)
         if kind == z3.Z3_OP_PR_ASSERTED:
-            i = self.g.expand(fc.parse(fact.sexpr(), max_depth=100000)[0])
-            require(i in self.original, 'native assertion is absent from original input')
-            result = self.original[i]
+            i = self.node(fact)
+            if i in self.original:
+                result = self.original[i]
+            else:
+                # Z3's assertion pipeline flattens nested Boolean conjunctions
+                # before recording PR_ASSERTED. Derive that version from the
+                # actual SMT input, rather than promoting it to an assumption.
+                field_atoms = {}
+                signatures = {}
+                def shape(n):
+                    if n in signatures: return signatures[n]
+                    op, args, _ = self.g.nodes[n]
+                    if op in ('and', 'or', 'ff.add', 'ff.mul'):
+                        flat, todo = [], list(args)
+                        while todo:
+                            child = todo.pop()
+                            if self.g.nodes[child][0] == op: todo.extend(self.g.nodes[child][1])
+                            else: flat.append(shape(child))
+                        value = (op, tuple(sorted(flat)))
+                    elif args:
+                        value = (op, tuple(shape(a) for a in args))
+                    else: value = ('atom', n)
+                    if self.g.field_atom(n): field_atoms.setdefault(value, set()).add(n)
+                    signatures[n] = value
+                    return value
+                signature = shape(i)
+                matching = [j for j in self.original if shape(j) == signature]
+                require(matching, 'native assertion is absent from original input')
+                j = matching[0]
+                parents = [(j, self.original[j])]
+                for atoms in field_atoms.values():
+                    atoms = sorted(atoms)
+                    for a, b in zip(atoms, atoms[1:]):
+                        left, right = self.g.nodes[a][1], self.g.nodes[b][1]
+                        one = f'(as ff1 {bp.sort_text(self.g.p)})'
+                        identity = self.step([f'(= (ff.mul {one} (ff.add {self.g.ref(left[0])} (ff.neg {self.g.ref(left[1])}))) '
+                                              f'(ff.mul {one} (ff.add {self.g.ref(right[0])} (ff.neg {self.g.ref(right[1])}))))'], 'poly_simp')
+                        equality = self.g.node('=', (a,b))
+                        proved = self.step([self.g.ref(equality)], 'poly_simp_rel', [identity])
+                        parents.append((equality, proved))
+                result = self.boolean_ids(i, parents)
         elif kind == z3.Z3_OP_PR_HYPOTHESIS:
             require(fact.get_id() in env, 'open native hypothesis')
             result = env[fact.get_id()]
