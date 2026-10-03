@@ -374,7 +374,17 @@ namespace ff {
         m_imp->checked = true;
         if (record_proof) {
             m_imp->proof_attempted = true;
-            m_imp->proof = record_refutation(m_imp->m, m_imp->premises, m_imp->params);
+            try {
+                m_imp->proof = record_refutation(m_imp->m, m_imp->premises, m_imp->params);
+            }
+            catch (exhausted const &) {
+                // A local recording limit says nothing about satisfiability.
+                // Candidate search may still produce a model, checked below
+                // against every original premise. Global cancellation remains
+                // binding, and UNSAT still requires recorded evidence.
+                if (m_imp->m.limit().is_canceled())
+                    throw;
+            }
             if (m_imp->proof) {
                 // Every original premise is retained; no unrecorded normalization
                 // or frontend equality is smuggled in as an extra assumption.

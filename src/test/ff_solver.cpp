@@ -251,6 +251,37 @@ static void evidence_contract() {
     try { ENSURE(budget.check(true)==l_undef); }
     catch (ff::exhausted const&) { exhausted=true; }
     ENSURE(exhausted && !budget.evidence());
+
+    // Exceed the recorder's bounded definitional encoding with a reducible
+    // term. A failed refutation attempt must not suppress a validated model,
+    // nor let a proof-enabled UNSAT escape without evidence.
+    expr_ref nested(x, m);
+    for (unsigned i = 0; i < 4100; ++i)
+        nested = ff.mk_neg(nested);
+    expr_ref zero(ff.mk_numeral(rational(0), field), m);
+    expr_ref_vector premises(m);
+    premises.push_back(m.mk_eq(nested, zero));
+    exhausted = false;
+    try { ff::record_refutation(m, premises, params_ref()); }
+    catch (ff::exhausted const&) { exhausted = true; }
+    ENSURE(exhausted);
+    ff::solver recovered(m, field, params_ref());
+    recovered.add(nested, zero, true);
+    ENSURE(recovered.check(true) == l_true && !recovered.evidence());
+    ENSURE(recovered.value(nested).is_zero());
+    ff::solver unproved(m, field, params_ref());
+    unproved.add(nested, zero, true);
+    unproved.add(nested, zero, false);
+    ENSURE(unproved.check(true) == l_undef && !unproved.evidence());
+
+    ff::solver canceled(m, field, params_ref());
+    canceled.add(x, zero, true);
+    m.limit().inc_cancel();
+    exhausted = false;
+    try { canceled.check(true); }
+    catch (ff::exhausted const&) { exhausted = true; }
+    m.limit().dec_cancel();
+    ENSURE(exhausted && !canceled.evidence());
 }
 
 void tst_ff_solver() {

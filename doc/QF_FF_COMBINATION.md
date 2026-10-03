@@ -9,7 +9,7 @@ constraints use Z3's existing theories. Each prime field is solved separately.
 
 `ast/ff/ff_solver.{h,cpp}` provides field reasoning independently of
 `smt::context`, enodes and SAT state. Its CMake component depends on `rewriter`
-and the `math/ff` algebra component. Both `smt/theory_ff` and the opt-in
+and the `math/ff` algebra component. Both `smt/theory_ff` and the
 `sat/smt/ff_solver` consumer use this interface.
 
 - `ff::solver` collects one field's ground equality/disequality premises,
@@ -45,6 +45,11 @@ its native `produce-proofs` mode remains unsupported.
 
 ### SAT/EUF consumer and proof boundary
 
+The integration target is automatic use of the shared core by both frontends,
+with recording enabled whenever proofs are requested, without a field-specific
+opt-in switch. The coverage and proof gaps described here remain blockers for
+that target; an experimental backend selection is not the intended final API.
+
 The experimental consumer in `sat/smt/ff_solver` is selected through the existing
 SAT/EUF mode, for example `(set-option :sat.euf true)` followed by
 `(check-sat-using smt)`, or `With(Tactic('sat'), euf=True).solver()` in Python.
@@ -75,6 +80,9 @@ Other theories retain their existing proof-checker behavior, including SMT fallb
 for some rules. Recording-mode search can be less complete than ordinary solving:
 unsupported finite-domain deductions or exhausted evidence budgets return `unknown`.
 It does not turn every legacy optimization into a proof-producing operation.
+Exhausting a local recording bound still permits candidate search: a SAT result
+must pass validation against every original field premise. An UNSAT result
+without evidence remains inconclusive, and global cancellation stops both paths.
 
 A separate generic SAT/SMT issue affects online checking in persistent user scopes:
 its checker can receive an unbound scope literal and crash. This was reproduced on
