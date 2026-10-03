@@ -25,19 +25,13 @@ void tst_sat_smt_proof_scope() {
             s->push();
         }
         unsigned clauses = 0;
-        bool popping = false;
-        auto pop = [&](unsigned n) {
-            popping = true;
-            s->pop(n);
-            popping = false;
-        };
+        auto pop = [&](unsigned n) { s->pop(n); };
         user_propagator::on_clause_eh_t callback = [&](void*, expr*, unsigned, unsigned const*,
                                                        unsigned n, expr* const* literals) {
-            // Deletion notifications during pop have separate AST-lifetime
-            // limitations; this regression checks active proof clauses.
-            if (!popping)
-                for (unsigned i = 0; i < n; ++i)
-                    ENSURE(literals[i] && m.is_bool(literals[i]));
+            // Includes deletion notifications during pop, before variable IDs
+            // can be recycled for a different scope's atoms.
+            for (unsigned i = 0; i < n; ++i)
+                ENSURE(literals[i] && m.is_bool(literals[i]));
             ++clauses;
         };
         s->register_on_clause(nullptr, callback);
