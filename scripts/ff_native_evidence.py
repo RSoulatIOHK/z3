@@ -24,7 +24,7 @@ def signed(lit):
     return lit.get_id(), negative
 
 
-def encode(evidence, with_bindings=False):
+def _encode(evidence):
     """Bind the native definition/input indices and replay through the v1 DAG checker."""
     require(z3.is_app(evidence) and str(evidence.decl().name()) == 'ff-pac'
             and evidence.num_args() == 2, 'malformed native FF evidence')
@@ -142,16 +142,27 @@ def encode(evidence, with_bindings=False):
     raw = lambda f: [[str(c)] + list(map(str, mon)) for mon, c in sorted(f.items())]
     dag = fc.sexpr(['ff-certificate', ':version', '1', ':modulus', str(p), ':variables', variables,
                    ':inputs', [raw(f) for f in equations], ':nodes', nodes, ':root', str(ids[root.get_id()])]) + '\n'
-    fc.verify(problem, dag)
-    return (problem, dag, bindings, origins) if with_bindings else (problem, dag)
+    _, cert, values = fc.verify(problem, dag)
+    return problem, dag, bindings, origins, cert, values
 
 
-def check_lemma(lemma):
+def encode(evidence, with_bindings=False):
+    result = _encode(evidence)
+    return result[:4] if with_bindings else result[:2]
+
+
+def replay_lemma(lemma):
+    """Validate the clause and return its independently replayed evidence once.
+
+    Exporters need the bindings and intermediate polynomials as well as the
+    serialized DAG. Returning them from the same checked replay avoids repeating
+    expensive arithmetic; there is no path that skips premise or DAG checking.
+    """
     require(z3.is_app(lemma) and lemma.decl().kind() == z3.Z3_OP_PR_TH_LEMMA and lemma.num_args() == 1, 'native leaf expected')
     params = lemma.decl().params()
     require(len(params) == 3 and params[:2] == ['ff', 'pac'], 'native FF rule expected')
     evidence = params[2]
-    problem, dag = encode(evidence)
+    result = _encode(evidence)
     todo, literals, true = [lemma.arg(0)], set(), False
     while todo:
         f = todo.pop()
@@ -161,7 +172,11 @@ def check_lemma(lemma):
     for p in evidence.arg(0).children():
         atom, neg = signed(p)
         require(true or (atom, not neg) in literals, 'native lemma removed a certified literal')
-    return problem, dag
+    return result
+
+
+def check_lemma(lemma):
+    return replay_lemma(lemma)[:2]
 
 
 def artifacts(lemma):
