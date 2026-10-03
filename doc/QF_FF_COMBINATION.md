@@ -5,6 +5,47 @@ for v1. The SMT plugin retains native field sorts in UF signatures, array
 indices/ranges and datatype fields. Integer, real, bit-vector and Boolean
 constraints use Z3's existing theories. Each prime field is solved separately.
 
+## Reusable reasoning core and frontend contract
+
+`ast/ff/ff_solver.{h,cpp}` provides field reasoning independently of
+`smt::context`, enodes and SAT state. Its CMake component depends on `rewriter`
+and the `math/ff` algebra component. The SMT implementation uses this interface;
+a second SAT/SMT consumer has not yet been implemented.
+
+- `ff::solver` collects one field's ground equality/disequality premises,
+  normalizes acyclic wire definitions with transitive support, encodes residual
+  polynomials and invokes algebra. It checks candidate values against all supplied
+  original constraints before exposing them. An UNSAT explanation consists of
+  exact input indices; `premise(i)` preserves the original signed equality.
+- `ff::solver_cache` holds only pinned, assertion-independent term encodings for
+  one manager and field. Recreate the solver for each assignment/scope; only this
+  pure cache and the existing basis cache may survive. Compact encodings use a
+  local cache because their fresh defining equations belong to one problem.
+  Reset or evict a cache only when no active solver borrows it.
+- `ff::root_lemmas` recognizes guarded Boolean-domain, zero-product and square
+  clauses. It owns the bounded pure normalization cache. The frontend owns
+  relevance, assignments, duplicate emission and the lifetime of asserted lemmas.
+
+`theory_ff` retains internalization, collection of equality-engine/SAT premises,
+model arrangements, conflict delivery, BV bridge assertions and model integration.
+A foreign term such as `f(x)` is an opaque field value to the core. The frontend
+must supply relevant equalities/congruence and enforce the other theory's semantics.
+Consequently, a SAT response from the core is a **field candidate**, not a complete
+mixed-theory model. An UNSAT response gives a conditional field lemma whose premises
+still need frontend justifications. Resource exhaustion is inconclusive.
+
+The API deliberately distinguishes these explanations from certificates. This
+extraction adds no proof recorder or trusted proof rule. Proof-aware normalization
+and scoped evidence connecting field deductions to SAT/congruence explanations
+remain follow-up work. Ordinary native proof mode remains unsupported.
+
+The `test-z3 ff_solver` suite exercises the interface without an SMT context:
+124 exhaustively checked problems over F2/F3/F7, independent checking of conflict
+premise subsets, changing constraints with reused caches, compact encoding,
+transitive definition support, supplied foreign-term equalities, cancellation
+recovery and exhaustive validation of guarded root clauses. The existing mixed
+UF/array/datatype/sequence tests continue to exercise the SMT adapter.
+
 ## Native shared-theory search
 
 At each field final check, the plugin collects relevant equality classes and
