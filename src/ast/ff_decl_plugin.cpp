@@ -126,14 +126,12 @@ func_decl *ff_decl_plugin::mk_func_decl(decl_kind k, unsigned n, parameter const
     }
     func_decl_info info(m_family_id, k);
     if (k == OP_FF_ADD || k == OP_FF_MUL) {
-        // Field addition and multiplication are associative and commutative,
-        // so generic AST flattening/reordering preserves their meaning.
+        // Preserve associative SMT-LIB/API syntax, but let the AST manager
+        // lower n-ary applications to nested binary nodes.
         // bitsum is positional and must not inherit these attributes.
         info.set_associative();
-        info.set_flat_associative();
         info.set_commutative();
-        // One declaration for every arity, as for Z3's arithmetic AC operators.
-        // Rewriting an n-ary application must not retain an n-specific symbol.
+        // Every internal application uses this binary declaration.
         return m.mk_func_decl(symbol(name), 2, domain, domain[0], info);
     }
     return m.mk_func_decl(symbol(name), arity, domain, domain[0], info);

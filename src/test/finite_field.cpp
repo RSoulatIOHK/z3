@@ -940,6 +940,51 @@ static void test_ff_integration() {
 
 // Substituting a wire into another assertion must retain the defining
 // equation as a premise, including transitive definitions and shared terms.
+static void test_ff_binary_operators() {
+    ast_manager m;
+    reg_decl_plugins(m);
+    ff_util ff(m);
+    th_rewriter rw(m);
+    for (unsigned prime : {2u, 7u, 101u}) {
+        sort_ref field(ff.mk_sort(rational(prime)), m);
+        expr_ref x(m.mk_const("binary-x", field), m), y(m.mk_const("binary-y", field), m);
+        expr_ref z(m.mk_const("binary-z", field), m), c(ff.mk_numeral(rational(3), field), m);
+        expr_ref_vector args(m);
+        for (expr* e : {c.get(), x.get(), y.get(), z.get(), x.get()}) args.push_back(e);
+        for (bool product : {false, true}) {
+            expr_ref flat(product ? ff.mk_mul(args) : ff.mk_add(args), m);
+            expr_ref nested(args.back(), m);
+            for (unsigned i = args.size() - 1; i-- > 0;)
+                nested = product ? ff.mk_mul(nested, args.get(i)) : ff.mk_add(nested, args.get(i));
+            ptr_vector<expr> pending;
+            pending.push_back(flat);
+            while (!pending.empty()) {
+                expr* e = pending.back(); pending.pop_back();
+                if (ff.is_add(e) || ff.is_mul(e)) {
+                    ENSURE(to_app(e)->get_num_args() == 2);
+                    ENSURE(!to_app(e)->get_decl()->is_flat_associative());
+                    for (expr* child : *to_app(e)) pending.push_back(child);
+                }
+            }
+            // Parenthesization and input order must not hide matching terms
+            // or coefficients from rewriting and circuit normalization.
+            rw(flat); rw(nested);
+            ENSURE(flat == nested);
+            expr_ref difference(ff.mk_add(flat, ff.mk_neg(nested)), m);
+            rw(difference);
+            rational value;
+            ENSURE(ff.is_numeral(difference, value) && value.is_zero());
+        }
+    }
+    cmd_context commands(false, &m);
+    std::istringstream input("(set-logic QF_FF)(define-sort F () (_ FiniteField 7))"
+        "(declare-const a F)(declare-const b F)(declare-const c F)"
+        "(assert (= (ff.add a b c) (ff.mul a b c)))");
+    ENSURE(parse_smt2_commands(commands, input));
+    auto eq = to_app(commands.assertions()[0]);
+    for (expr* side : *eq) ENSURE(to_app(side)->get_num_args() == 2);
+}
+
 static void test_ff_wire_dependencies() {
     ast_manager m;
     reg_decl_plugins(m);
@@ -1086,6 +1131,7 @@ static void test_ff_zero_test_wire_priority() {
 }
 
 void tst_finite_field() {
+    test_ff_binary_operators();
     test_ff_zero_test_wire_priority();
     test_ff_wire_dependencies();
     test_ff_nested_zero_test();
