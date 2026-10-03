@@ -44,14 +44,16 @@ Definitional polynomial variables are replaced by their original terms; inverse
 witnesses use the artifact's checked `choice` rule. Small-field Fermat inputs
 become zero in Pacheck's existing quotient arithmetic (`x^p=x`). Polynomial
 rewrites have explicit scaling identities, and local Boolean inferences have
-resolution proofs. There is no second field-solving or reconstruction search.
+resolution proofs. Closed native subproofs are emitted once in the outer Alethe
+scope before their consumers; open proofs retain their hypothesis environment.
+There is no second field-solving or reconstruction search.
 
 The exporter is bounded and fails on unsupported native rules or input theories.
 Its current profile is pure ground, single-prime-field SMT with Boolean
 connectives and field ITEs. Arrays, sequences, field-valued UFs and mixed fields
 are outside this **external export** profile; native proof production still
 supports the existing theory combinations. Lean checking is not implemented.
-Twenty-six focused whole-proof regressions exercise Boolean reasoning, wire
+Twenty-nine focused whole-proof regressions exercise Boolean reasoning, wire
 elimination, domains, both indicator polarities, small-field roots and a
 127-bit prime, nested input conjunctions and n-ary field syntax, and local AND/XOR/mux case proofs, with actual Carcara/Pacheck acceptance and mutation rejection.
 This is not a claim of full FMCAD external-checking coverage.
