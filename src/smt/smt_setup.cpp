@@ -76,8 +76,32 @@ namespace smt {
     }
 
     void setup::setup_ff() {
+        if (m_context.get_theory(ff_util(m_manager).get_fid()))
+            return;
         setup_bv();
         m_context.register_plugin(alloc(theory_ff, m_context));
+    }
+
+    void setup::setup_for(unsigned n, expr* const* formulas) {
+        ff_util ff(m_manager);
+        auto* plugin = m_manager.get_plugin(ff.get_fid());
+        if (!n || !plugin || !plugin->has_sorts() || m_context.get_theory(ff.get_fid()))
+            return;
+        static_features features(m_manager);
+        features.collect(n, formulas);
+        if (features.m_has_ff)
+            setup_ff();
+    }
+
+    void setup::setup_for_assertions(unsigned begin) {
+        ff_util ff(m_manager);
+        auto* plugin = m_manager.get_plugin(ff.get_fid());
+        if (!plugin || !plugin->has_sorts() || m_context.get_theory(ff.get_fid()))
+            return;
+        ptr_vector<expr> formulas;
+        for (unsigned i = begin; i < m_context.get_num_asserted_formulas(); ++i)
+            formulas.push_back(m_context.get_asserted_formula(i));
+        setup_for(formulas.size(), formulas.data());
     }
 
     void setup::setup_default() {
