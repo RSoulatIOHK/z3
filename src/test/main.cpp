@@ -138,6 +138,7 @@
     X(smt2print_parse) \
     X(substitution) \
     X(ff_solver) \
+    X(ff_domain) \
     X(finite_field) \
     X(polynomial) \
     X(polynomial_factorization) \
