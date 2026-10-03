@@ -60,10 +60,10 @@ The standalone command retains scalar reconstruction by default. The shared
 core now has the separate recording mode described below.
 
 ```sh
-build-ff-cmake/z3 tests/finite_field/fixtures/certificates/large-prime.smt2 > /tmp/large.ffcert
-python3 scripts/ff_certificate.py tests/finite_field/fixtures/certificates/large-prime.smt2 \
+build-ff-cmake/z3 z3test/regressions/finite_field/fixtures/certificates/large-prime.smt2 > /tmp/large.ffcert
+python3 scripts/ff_certificate.py z3test/regressions/finite_field/fixtures/certificates/large-prime.smt2 \
   /tmp/large.ffcert --export-alethe /tmp/large.alethe
-python3 scripts/ff_certificate.py tests/finite_field/fixtures/certificates/large-prime.smt2 \
+python3 scripts/ff_certificate.py z3test/regressions/finite_field/fixtures/certificates/large-prime.smt2 \
   /tmp/large.alethe --alethe
 ```
 
