@@ -46,6 +46,10 @@ become zero in Pacheck's existing quotient arithmetic (`x^p=x`). Polynomial
 rewrites have explicit scaling identities, and local Boolean inferences have
 resolution proofs. Closed native subproofs are emitted once in the outer Alethe
 scope before their consumers; open proofs retain their hypothesis environment.
+Equality symmetry and reflexivity use standard Alethe rules without expanding
+their polynomial operands. New bundles use one premise-binding and arithmetic
+replay pass before running both external checkers; checking an existing bundle
+still regenerates its expected contents and rejects modified files.
 There is no second field-solving or reconstruction search.
 
 The exporter is bounded and fails on unsupported native rules or input theories.
@@ -53,9 +57,11 @@ Its current profile is pure ground, single-prime-field SMT with Boolean
 connectives and field ITEs. Arrays, sequences, field-valued UFs and mixed fields
 are outside this **external export** profile; native proof production still
 supports the existing theory combinations. Lean checking is not implemented.
-Twenty-nine focused whole-proof regressions exercise Boolean reasoning, wire
+Thirty-two focused whole-proof regressions exercise Boolean reasoning, wire
 elimination, domains, both indicator polarities, small-field roots and a
-127-bit prime, nested input conjunctions and n-ary field syntax, and local AND/XOR/mux case proofs, with actual Carcara/Pacheck acceptance and mutation rejection.
+127-bit prime, nested input conjunctions and n-ary field syntax, bit-domain
+aliases, equality symmetry and local AND/XOR/mux case proofs, with actual
+Carcara/Pacheck acceptance and mutation rejection.
 This is not a claim of full FMCAD external-checking coverage.
 
 With the matching Python bindings and shared library on the paths:
