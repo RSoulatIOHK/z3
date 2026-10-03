@@ -9,6 +9,8 @@ Copyright (c) 2026 Romain Soulat
 #include "ast/proofs/proof_checker.h"
 #include "ast/rewriter/th_rewriter.h"
 #include "solver/solver.h"
+#include "solver/simplifier_solver.h"
+#include "ast/simplifiers/ff_simplify.h"
 #include "model/model.h"
 #include "util/debug.h"
 
@@ -71,6 +73,29 @@ void tst_ff_native_proof() {
     }
     // The native proof owns the evidence after the solver is destroyed.
     ENSURE(check_native(m, retained) > 0);
+    // Exercise both the tactic constructor (before it owns a goal) and
+    // persistent model-trail substitution replay after a scope boundary.
+    for (bool incremental_simplifier : {false, true}) {
+        scoped_ptr<solver> s = mk_smt2_solver(m, params, symbol("QF_FF"));
+        if (incremental_simplifier) {
+            simplifier_factory factory = [](ast_manager& m, params_ref const& p, dependent_expr_state& st) {
+                return alloc(ff_basic_simplifier, m, p, st);
+            };
+            s = mk_simplifier_solver(s.detach(), &factory);
+        }
+        s->assert_expr(m.mk_eq(x, one));
+        s->push();
+        s->assert_expr(m.mk_eq(x, three));
+        ENSURE(s->check_sat() == l_false);
+        check_native(m, s->get_proof());
+        s->pop(1);
+        ENSURE(s->check_sat() == l_true);
+        expr_ref assumption(m.mk_eq(x, three), m);
+        expr* assumptions[] = {assumption};
+        ENSURE(s->check_sat(1, assumptions) == l_false);
+        check_native(m, s->get_proof());
+        ENSURE(s->check_sat() == l_true);
+    }
     {
         scoped_ptr<solver> s = mk_smt2_solver(m, params);
         // Reversed wire definition exercises symmetry, substitution and rewrite

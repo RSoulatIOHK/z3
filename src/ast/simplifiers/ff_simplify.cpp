@@ -538,7 +538,10 @@ ff_basic_simplifier::ff_basic_simplifier(ast_manager &m, params_ref const &p, de
     // constraints still reach solving.
     m_impl = alloc(then_simplifier, m, p, s);
     m_impl->add_simplifier(alloc(rewriter_simplifier, m, p, s));
-    if (!s.proofs_enabled()) {
+    // A tactic can construct this pipeline before attaching its goal, when
+    // s.proofs_enabled() is still false. The manager already knows whether
+    // proofs may be requested; never install an unrecorded pass in that case.
+    if (!m.proofs_enabled()) {
         // These passes do not yet produce evidence. Keep their original
         // assertions in proof mode; wire substitution and solve-eqs below
         // carry source proofs through the ordinary preprocessing interface.
