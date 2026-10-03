@@ -7,7 +7,7 @@ Module Name:
 
 Abstract:
 
-    Groebner-basis (Buchberger-style) elimination engine over Q used to
+    Groebner-basis (Buchberger-style) elimination engine over prime fields used to
     decide prime-field constraint systems. See ff_polynomial.h.
 
 Author:

@@ -8,7 +8,7 @@ Module Name:
 Abstract:
 
     Sparse multivariate polynomial representation (monomial -> rational
-    coefficient maps) over Q, with input-constraint provenance tracking,
+    coefficient maps) over prime fields, with input-constraint provenance tracking,
     used by the Groebner-basis elimination engine for prime fields.
 
 Author:
