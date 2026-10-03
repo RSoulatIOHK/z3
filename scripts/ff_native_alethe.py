@@ -181,6 +181,34 @@ class Exporter:
             if not (z3.is_eq(e) and isinstance(e.arg(0).sort(), z3.FiniteFieldSortRef)):
                 pending.extend(a for a in e.children() if z3.is_bool(a)); continue
             a, b = e.children(); field = a.sort(); ar = fc.Arithmetic(field.size())
+            if z3.is_app_of(a, z3.Z3_OP_ITE) or z3.is_app_of(b, z3.Z3_OP_ITE):
+                choices = [[(t.arg(0), t.arg(1)), (z3.Not(t.arg(0)), t.arg(2))]
+                           if z3.is_app_of(t, z3.Z3_OP_ITE) else [(None, t)] for t in (a, b)]
+                for ca, va in choices[0]:
+                    for cb, vb in choices[1]:
+                        selections = [(t, c, v) for t, c, v in [(a, ca, va), (b, cb, vb)] if c is not None]
+                        assumptions = [c for _, c, _ in selections]
+                        branch_eq = va == vb
+                        bridge = e == branch_eq
+                        anchor = self.name('ite_equality')
+                        self.w.emit(f'(anchor :step {anchor})')
+                        names, equalities = [], []
+                        for _, c, _ in selections:
+                            name = self.name('selector'); names.append(name)
+                            self.w.emit(f'(assume {name} {self.ref(c)})')
+                        for (t, c, v), name in zip(selections, names):
+                            axiom = z3.Or(z3.Not(c), t == v)
+                            selected = self.boolean(t == v, [(c, name), (axiom, self.ite_axiom(axiom))])
+                            equalities.append(selected)
+                        proved = self.step([self.ref(bridge)], 'cong', equalities)
+                        self.step([f'(not {self.ref(c)})' for c in assumptions] + [self.ref(bridge)],
+                                  'subproof', name=anchor, discharge=names)
+                        clause = z3.Or(*[z3.Not(c) for c in assumptions], bridge)
+                        folds = [self.step([self.ref(clause), f'(not {self.ref(lit)})'], 'or_neg', args=[str(i)])
+                                 for i, lit in enumerate(list(clause.children()))]
+                        unit = self.step([self.ref(clause)], 'resolution', [anchor] + folds)
+                        parents.append((clause, unit)); pending.append(branch_eq)
+
             value = ar.add(polynomial(a, ar), polynomial(b, ar), -1)
             scale = pow(value[sorted(value)[0]], -1, ar.p) if value else 1
             value = ar.mul(value, {(): scale})
@@ -445,7 +473,16 @@ class Exporter:
             if kind in rules:
                 result = self.step([self.ref(fact)], rules[kind], [name for _,name in parents])
             elif kind in (z3.Z3_OP_PR_REWRITE, z3.Z3_OP_PR_COMMUTATIVITY) and z3.is_eq(fact) and not z3.is_bool(fact.arg(0)):
-                result = self.step([self.ref(fact)], 'poly_simp')
+                lhs, rhs = fact.children()
+                if z3.is_app_of(lhs, z3.Z3_OP_ITE) and (
+                        z3.is_true(lhs.arg(0)) and lhs.arg(1).eq(rhs) or
+                        z3.is_false(lhs.arg(0)) and lhs.arg(2).eq(rhs) or
+                        lhs.arg(1).eq(lhs.arg(2)) and lhs.arg(1).eq(rhs) or
+                        z3.is_not(lhs.arg(0)) and z3.is_app_of(rhs, z3.Z3_OP_ITE) and
+                        lhs.arg(0).arg(0).eq(rhs.arg(0)) and lhs.arg(1).eq(rhs.arg(2)) and lhs.arg(2).eq(rhs.arg(1))):
+                    result = self.step([self.ref(fact)], 'ite_simplify')
+                else:
+                    result = self.step([self.ref(fact)], 'poly_simp')
             elif kind in (z3.Z3_OP_PR_REWRITE, z3.Z3_OP_PR_COMMUTATIVITY):
                 require(not parents, 'rewrite with parents')
                 result = self.rewrite(fact)

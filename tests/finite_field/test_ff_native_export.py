@@ -36,6 +36,17 @@ def check_whole_proofs(args):
         '(declare-const x (_ FiniteField 2))(assert (= (ff.add (ff.mul x x) x) #f1m2))',
         '(declare-const x (_ FiniteField 7))(assert (= (ff.mul x x) #f3m7))',
     ]
+    # Native circuit preprocessing must export its local case proofs too.
+    # These inputs retain arbitrary Boolean selectors and signed field terms.
+    for prime in [2, 7, 101]:
+        z, o = f'#f0m{prime}', f'#f1m{prime}'
+        a, b, c = f'(ite a {o} {z})', f'(ite b {o} {z})', f'(ite c {o} {z})'
+        product = f'(ff.mul {a} {b})'
+        xor = f'(ff.add {a} {b} (ff.neg (ff.mul #f{2 % prime}m{prime} {product})))'
+        mux = f'(ff.add (ff.mul {c} {a}) (ff.mul (ff.add {o} (ff.neg {c})) {b}))'
+        for term, boolean in [(product, '(and a b)'), (xor, '(xor a b)'), (mux, '(ite c a b)')]:
+            cases.append('(declare-const a Bool)(declare-const b Bool)(declare-const c Bool)' +
+                         f'(assert (not (= {term} (ite {boolean} {o} {z}))))')
     for prime in [101, 2**127 - 1]:
         f = f'(_ FiniteField {prime})'; zero = f'#f0m{prime}'; one = f'#f1m{prime}'
         declarations = ''.join(f'(declare-const {x} {f})' for x in ['x', 'y', 'z', 'w', 'u', 'v'])
