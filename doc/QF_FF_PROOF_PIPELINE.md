@@ -14,7 +14,7 @@ profile for inputs outside the legacy literal-conjunction path.
 ## Run and independently recheck
 
 Build the external checkers using
-[`proof_checkers/README.md`](https://github.com/RSoulatIOHK/z3test/blob/5833b990af76aeab59343bd7e31ce18298f8762c/regressions/finite_field/proof_checkers/README.md).
+[`proof_checkers/README.md`](https://github.com/RSoulatIOHK/z3test/blob/e43b54170a7b35591d9044bb413fca8b0684f926/regressions/finite_field/proof_checkers/README.md).
 Set `CARCARA` and `FFPACHECK` to their absolute executable paths:
 
 ```sh
