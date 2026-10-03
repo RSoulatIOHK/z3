@@ -518,7 +518,14 @@ void ff_wire_simplifier::reduce() {
         // for polynomial reasoning, but not a freely assignable model constant:
         // deleting its definition would lose congruence or interpreted semantics.
         // Keep one defining equality; conflicting definitions remain constraints.
-        if (!is_uninterp_const(v) || !ff.is_ff(v) || bits.contains(v) || ids.contains(v) || occurs(v, rhs))
+        expr *condition = nullptr, *hi = nullptr, *lo = nullptr;
+        rational h, l;
+        bool boolean_wire = m.is_ite(rhs, condition, hi, lo) && ff.is_numeral(hi, h) && ff.is_numeral(lo, l) &&
+            (h.is_zero() || h.is_one()) && (l.is_zero() || l.is_one());
+        // Keep bit variables out of wide affine elimination, but an explicit
+        // x=ite(c,0,1) definition preserves their domain and Boolean selector.
+        // The usual occurs check still excludes a self-referential condition.
+        if (!is_uninterp_const(v) || !ff.is_ff(v) || (bits.contains(v) && !boolean_wire) || ids.contains(v) || occurs(v, rhs))
             continue;
         ids.insert(v, static_cast<unsigned>(vars.size()));
         vars.push_back(v);
