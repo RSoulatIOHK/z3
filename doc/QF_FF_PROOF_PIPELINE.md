@@ -1,4 +1,32 @@
-# Original-input Alethe/PAC pipeline: second v2 milestone
+# Native proof recording and external Alethe/PAC profiles
+
+With `(set-option :produce-proofs true)`, the default finite-field solver records
+its actual algebra derivation and attaches premise-bound PAC evidence to native
+`th-lemma` proof nodes. The legacy SMT adapter and SAT/EUF adapter share this
+interface. Wire substitution, equality elimination and rewriting compose native
+proofs; preprocessing passes without evidence are skipped. Unsupported recorded
+reasoning returns `unknown`, rather than an unproved UNSAT answer.
+
+For a pure ground QF_FF input, append `(ff-check-native-proof)` after an UNSAT
+`check-sat`. Successful replay prints
+`(ff-native-proof-checked :field-lemmas N)`. This profile verifies original
+assertion membership, closed hypotheses, an explicit native rule selection,
+rewrite obligations and field evidence. It rejects other theories and does not
+silently treat check-sat assumptions as original assertions. It uses Z3's native
+proof checker and rewriter, so it is **not an independent whole-proof checker**.
+
+`scripts/ff_native_evidence.py` separately replays native FF leaves with Python
+polynomial arithmetic and exports them to the Alethe/PAC format below. Its
+`artifacts(lemma)` returns the encoded input, DAG, normalized polynomial input,
+Alethe and PAC text. After saving those files, `check_bundle(lemma, directory,
+carcara, ffpacheck)` rebinds them to that exact native lemma and runs both external
+checkers. Z3 is used for AST access, not a second reconstruction solve. A checked
+bundle proves the **field lemma**, not the whole original SMT input. Whole native
+SMT-proof export to Alethe remains unfinished; the reconstructed profiles below
+are separate pipelines and their historical coverage must not be substituted
+for native proof coverage.
+
+## Earlier reconstructed export profiles
 
 The opt-in pipeline now exports the finite-field Alethe/PAC format used by the
 FMCAD 2026 work and runs real external checkers. It uses the public companion
@@ -14,7 +42,7 @@ profile for inputs outside the legacy literal-conjunction path.
 ## Run and independently recheck
 
 Build the external checkers using
-[`proof_checkers/README.md`](https://github.com/RSoulatIOHK/z3test/blob/e43b54170a7b35591d9044bb413fca8b0684f926/regressions/finite_field/proof_checkers/README.md).
+[`proof_checkers/README.md`](https://github.com/RSoulatIOHK/z3test/blob/ac35efacee5c467cb5717e2d4051d6d3793d99b5/regressions/finite_field/proof_checkers/README.md).
 Set `CARCARA` and `FFPACHECK` to their absolute executable paths:
 
 ```sh

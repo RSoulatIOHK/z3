@@ -7,6 +7,7 @@ Copyright (c) 2026 Romain Soulat
 #include "ast/ff_decl_plugin.h"
 #include "ast/ff/ff_evidence.h"
 #include "solver/solver.h"
+#include "sat/smt/euf_proof_checker.h"
 #include "model/model.h"
 #include "tactic/user_propagator_base.h"
 #include "util/debug.h"
@@ -22,8 +23,8 @@ void tst_ff_euf() {
     p.set_bool("smt", true);
     p.set_bool("euf", true);
     p.set_bool("smt.proof.check", true);
-    // Also replay each field DAG below: the outer checker can still use its
-    // SMT fallback when SAT has weakened/simplified the clause around a hint.
+    // The online checker must replay FF evidence and discharge removed
+    // literals by RUP, including scoped clauses. It cannot fall back to SMT.
     scoped_ptr<solver> s = mk_smt2_solver(m, p);
     expr_ref_vector proofs(m);
     unsigned count = 0;
@@ -56,6 +57,16 @@ void tst_ff_euf() {
         ENSURE(s->check_sat(2, assumptions) == l_false);
     }
     ENSURE(count > 0);
+    // Even a true target clause must not conceal a malformed field DAG.
+    // A fresh SMT solve could validate the clause without validating its hint.
+    euf::smt_proof_checker rejecting(m, p);
+    app_ref malformed(m.mk_const("ff-pac", m.mk_proof_sort()), m);
+    expr_ref_vector tautology(m);
+    tautology.push_back(m.mk_true());
+    bool rejected = false;
+    try { rejecting.infer(tautology, malformed); }
+    catch (default_exception const&) { rejected = true; }
+    ENSURE(rejected);
     // A consumer can retain and replay hints after their SAT scope disappears:
     // all original premises and derivation nodes are owned by the proof AST.
     for (expr *proof : proofs)

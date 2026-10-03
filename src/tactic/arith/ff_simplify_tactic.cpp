@@ -7,8 +7,8 @@ Module Name:
 
 Abstract:
 
-    Tactic simplifying prime-field goals and propagating constants (no
-    certificates), preserving Boolean domain constraints ("ff-simplify").
+    Tactic simplifying prime-field goals and propagating constants, with
+    recorded wire/equality preprocessing when proofs are requested.
     Implemented as a thin wrapper around ff_basic_simplifier (see
     ast/simplifiers/ff_simplify.h) via dependent_expr_state_tactic.
 

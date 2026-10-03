@@ -1820,8 +1820,25 @@ namespace ff {
             for (auto i = defs.rbegin(); i != defs.rend(); ++i)
                 values[i->first] = evaluate(i->second, values);
         };
+        if (m_proof) {
+            // Witness search is compatible with recording: acceptance is by
+            // evaluation, never by absence of roots or failed sampling. The
+            // outer solve() also rechecks every original equation after restore.
+            for (unsigned trial = 0; trial < 32; ++trial) {
+                tick();
+                for (auto &v : values) v = trial < 2 ? rational(trial) : random_value();
+                bool valid = true;
+                for (auto const &f : eqs)
+                    if (!evaluate(f, values).is_zero()) { valid = false; break; }
+                if (valid) {
+                    restore();
+                    return l_true;
+                }
+            }
+        }
         if (eqs.empty()) {
-            if (m_proof) return l_undef;
+            // A candidate model needs no UNSAT derivation. Restore eliminated
+            // definitions and let solve() check every original polynomial.
             // A verified witness is sufficient; failed sampling never means UNSAT.
             for (unsigned trial = 0; trial < 32; ++trial) {
                 for (auto &v : values)
@@ -1907,13 +1924,15 @@ namespace ff {
                 }
             }
         }
-        if (!m_proof && tiny_search && depth == 0 && p < rational(64) && !eqs.empty()) {
+        if (tiny_search && depth == 0 && p < rational(64) && !eqs.empty()) {
             lbool r = tiny_solve(eqs, neqs, values);
             if (r == l_true) {
                 restore();
                 return l_true;
             }
-            if (r == l_false)
+            // Exhaustive search does not yet record branch coverage. Use its
+            // validated witnesses, but never its UNSAT answer in recording mode.
+            if (r == l_false && !m_proof)
                 return l_false;
         }
         bool have_basis = false;
@@ -2244,6 +2263,8 @@ namespace ff {
             used += k;
             if (used > stop || !limit.inc())
                 throw exhausted();
+            if (m_proof)
+                for (unsigned i = 0; i < std::max(k, 1u); ++i) tick();
         };
         tiny_stats ts;
         std::vector<uint32_t> model;

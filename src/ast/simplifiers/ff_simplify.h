@@ -25,9 +25,9 @@ Abstract:
     (ff-solve, ff-sat, ff-unique). It preserves compact theory atoms for
     lazy Boolean search by skipping simplification entirely when a goal
     contains a Boolean uninterpreted constant anywhere (the algebraic
-    decision procedures normalize circuits on their own), and declines to
-    run when proofs are requested (QF_FF certificates are not supported in
-    v1).
+    decision procedures normalize circuits on their own). Proof mode retains
+    original constraints for passes without evidence, and composes native
+    proofs through wire substitution, solve-eqs and rewriting.
 
 Author:
 
@@ -69,6 +69,7 @@ class ff_wire_simplifier : public dependent_expr_simplifier {
 public:
     ff_wire_simplifier(ast_manager &m, dependent_expr_state &s) : dependent_expr_simplifier(m, s) {}
     char const *name() const override { return "ff-wires"; }
+    bool supports_proofs() const override { return true; }
     void reduce() override;
     void collect_statistics(statistics &st) const override;
     void reset_statistics() override {

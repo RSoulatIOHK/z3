@@ -48,7 +48,8 @@ namespace {
             ff::basis_cache basis;
             // Reuse pure encodings while changing all input equations. Test
             // compact encodings too: their fresh definitions must stay local.
-            for (bool compact : {false, true})
+            for (bool recording : {false, true})
+              for (bool compact : {false, true})
                 for (unsigned a = 0; a < prime; ++a)
                     for (unsigned b = 0; b < prime; ++b) {
                         params_ref params;
@@ -63,7 +64,7 @@ namespace {
                         for (unsigned u = 0; u < prime; ++u)
                             for (unsigned v = 0; v < prime; ++v)
                                 exists |= u*v % prime == a && (u+v) % prime == b && u != b;
-                        lbool result = core.check();
+                        lbool result = core.check(recording);
                         ENSURE(result == (exists ? l_true : l_false));
                         if (exists) {
                             rational u = core.value(x), v = core.value(y);
@@ -72,6 +73,7 @@ namespace {
                             ENSURE(u != rational(b));
                         }
                         else {
+                            if (recording) ENSURE(core.evidence() && ff::check_refutation(m, core.evidence()));
                             // Check only the reported supporting premises by
                             // exhaustive enumeration, independently of algebra.
                             for (unsigned u = 0; u < prime; ++u)
@@ -90,7 +92,7 @@ namespace {
             cache.reset();
             ENSURE(cache.size() == 0);
         }
-        ENSURE(checked == 124);
+        ENSURE(checked == 248);
     }
 
     void interface_and_scope_contract() {
@@ -288,6 +290,11 @@ static void evidence_contract() {
         ff::solver consistent(m,field,params_ref());
         consistent.add(x,one,true);
         ENSURE(consistent.check(true)==l_true && !consistent.evidence());
+        ENSURE(consistent.value(x).is_one());
+        ff::solver tautology(m,field,params_ref());
+        tautology.add(x,x,true);
+        ENSURE(tautology.check(true)==l_true && !tautology.evidence());
+        ENSURE(tautology.value(x) >= rational(0) && tautology.value(x) < rational(prime));
     }
     sort_ref field(ff.mk_sort(rational(7)),m);
     expr_ref x(m.mk_const("nonresidue",field),m), square(ff.mk_mul(x,x),m);
@@ -304,27 +311,22 @@ static void evidence_contract() {
     catch (ff::exhausted const&) { exhausted=true; }
     ENSURE(exhausted && !budget.evidence());
 
-    // Exceed the recorder's bounded definitional encoding with a reducible
-    // term. A failed refutation attempt must not suppress a validated model,
-    // nor let a proof-enabled UNSAT escape without evidence.
+    // Encoding exhaustion is terminal for this recorded problem. It must not
+    // restart a different solver with a fresh budget or expose a partial model.
     expr_ref nested(x, m);
-    for (unsigned i = 0; i < 4100; ++i)
-        nested = ff.mk_neg(nested);
+    for (unsigned i = 0; i < 4100; ++i) nested = ff.mk_neg(nested);
     expr_ref zero(ff.mk_numeral(rational(0), field), m);
-    expr_ref_vector premises(m);
-    premises.push_back(m.mk_eq(nested, zero));
-    exhausted = false;
-    try { ff::record_refutation(m, premises, params_ref()); }
-    catch (ff::exhausted const&) { exhausted = true; }
-    ENSURE(exhausted);
-    ff::solver recovered(m, field, params_ref());
-    recovered.add(nested, zero, true);
-    ENSURE(recovered.check(true) == l_true && !recovered.evidence());
-    ENSURE(recovered.value(nested).is_zero());
-    ff::solver unproved(m, field, params_ref());
-    unproved.add(nested, zero, true);
-    unproved.add(nested, zero, false);
-    ENSURE(unproved.check(true) == l_undef && !unproved.evidence());
+    for (bool contradictory : {false, true}) {
+        ff::solver bounded(m, field, params_ref());
+        bounded.add(nested, zero, true);
+        if (contradictory) bounded.add(nested, zero, false);
+        exhausted = false;
+        try { bounded.check(true); } catch (ff::exhausted const&) { exhausted = true; }
+        ENSURE(exhausted && !bounded.evidence());
+        bool unavailable = false;
+        try { bounded.value(x); } catch (default_exception const&) { unavailable = true; }
+        ENSURE(unavailable);
+    }
 
     ff::solver canceled(m, field, params_ref());
     canceled.add(x, zero, true);

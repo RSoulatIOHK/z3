@@ -139,6 +139,7 @@
     X(finite_field) \
     X(ff_solver) \
     X(ff_euf) \
+    X(ff_native_proof) \
     X(polynomial) \
     X(polynomial_factorization) \
     X(upolynomial) \
@@ -200,6 +201,8 @@
     X(simplex) \
     X(sat_user_scope) \
     X(sat_smt_proof_scope) \
+    X(smt_proof_checker) \
+    X(smt_proof_weakening) \
     X_ARGV(ddnf) \
     X(ddnf1) \
     X(model_evaluator) \

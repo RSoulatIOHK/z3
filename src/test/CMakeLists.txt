@@ -115,6 +115,7 @@ add_executable(test-z3
   finite_field.cpp
   ff_solver.cpp
   ff_euf.cpp
+  ff_native_proof.cpp
   polynomial.cpp
   polynomial_factorization.cpp
   polynorm.cpp
@@ -137,6 +138,8 @@ add_executable(test-z3
   sat_lookahead.cpp
   sat_user_scope.cpp
   sat_smt_proof_scope.cpp
+  smt_proof_checker.cpp
+  smt_proof_weakening.cpp
   scoped_timer.cpp
   scoped_vector.cpp
   seq_power.cpp

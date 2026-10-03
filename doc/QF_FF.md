@@ -3,7 +3,7 @@
 This branch adds native prime-field syntax, models, C/C++/Python interfaces,
 and an algebraic solver to Z3. Large-prime performance is part of the v1 target;
 bit-vector lowering is the complete fallback and a correctness reference.
-V2 has begun with standalone polynomial certificates; complete solver proofs
+V2 includes default native proof recording and standalone polynomial certificates; complete external solver proofs
 remain under development.
 
 ## Current interface
@@ -149,8 +149,11 @@ moduli receive probable-prime screening, not primality certification.
 
 Standalone reconstruction and independent checking are described in
 [QF_FF_CERTIFICATES.md](QF_FF_CERTIFICATES.md) and the
-[Alethe/PAC pipeline](QF_FF_PROOF_PIPELINE.md). They do not imply native Z3
-`get-proof` support for the entire field solver. Mixed-theory proofs, root/field
+[Alethe/PAC pipeline](QF_FF_PROOF_PIPELINE.md). Default `produce-proofs` now
+records native FF evidence through both SMT adapters, with proof-capable wire
+and equality preprocessing. Native field leaves can be exported and checked;
+this is not yet an external Alethe proof of the whole native SMT trace.
+Root/field
 closure, uniqueness and small-field-search traces remain incomplete. Conflict
 premise sets alone are not certificates.
 
@@ -158,7 +161,7 @@ premise sets alone are not certificates.
 
 The external harness and fixtures live in a pinned `z3test` checkout.
 The `finite-field.yml` CI job runs both solver and certificate suites. Native
-C++ unit tests remain in `src/test`. See [the regression test guide](https://github.com/RSoulatIOHK/z3test/blob/e43b54170a7b35591d9044bb413fca8b0684f926/regressions/finite_field/README.md) for build and
+C++ unit tests remain in `src/test`. See [the regression test guide](https://github.com/RSoulatIOHK/z3test/blob/ac35efacee5c467cb5717e2d4051d6d3793d99b5/regressions/finite_field/README.md) for build and
 check commands. Tests cover exact small-field oracles, models, resource recovery,
 scopes, theory combination, simplification, APIs and proof rejection/mutation.
 
