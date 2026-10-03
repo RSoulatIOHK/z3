@@ -216,17 +216,26 @@ public:
         if (!(ff.is_add(source) || ff.is_mul(source) || ff.is_neg(source))) return false;
         // N-ary products of bits are conjunctions. Compose binary four-case
         // proofs instead of enumerating all assignments to a wide product.
-        if (ff.is_mul(source) && to_app(source)->get_num_args() > 3 &&
-            to_app(source)->get_num_args() <= 64) {
-            for (expr* a : *to_app(source)) {
+        ptr_vector<expr> factors, pending;
+        if (ff.is_mul(source)) pending.push_back(source);
+        while (!pending.empty() && factors.size() <= 64) {
+            if (!m.inc()) return false;
+            expr* e = pending.back(); pending.pop_back();
+            if (ff.is_mul(e))
+                for (unsigned i = to_app(e)->get_num_args(); i-- > 0;)
+                    pending.push_back(to_app(e)->get_arg(i));
+            else factors.push_back(e);
+        }
+        if (pending.empty() && factors.size() > 3 && factors.size() <= 64) {
+            for (expr* a : factors) {
                 expr *c, *t, *e; rational x, y;
                 if (!m.is_ite(a, c, t, e) || !ff.is_numeral(t, x) || !ff.is_numeral(e, y) ||
                     (!x.is_zero() && !x.is_one()) || (!y.is_zero() && !y.is_one())) return false;
             }
-            expr_ref original(to_app(source)->get_arg(0), m), reduced(original, m);
+            expr_ref original(factors[0], m), reduced(original, m);
             proof_ref prefix(m);
-            for (unsigned i = 1; i < to_app(source)->get_num_args(); ++i) {
-                expr* arg = to_app(source)->get_arg(i);
+            for (unsigned i = 1; i < factors.size(); ++i) {
+                expr* arg = factors[i];
                 expr_ref old(ff.mk_mul(original, arg), m), next(ff.mk_mul(reduced, arg), m), out(m);
                 proof_ref step(m), local(m);
                 proof* parent = prefix;
