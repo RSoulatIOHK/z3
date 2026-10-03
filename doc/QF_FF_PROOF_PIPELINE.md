@@ -3,8 +3,9 @@
 With `(set-option :produce-proofs true)`, the default finite-field solver records
 its actual algebra derivation and attaches premise-bound PAC evidence to native
 `th-lemma` proof nodes. The legacy SMT adapter and SAT/EUF adapter share this
-interface. Wire substitution, equality elimination and rewriting compose native
-proofs; preprocessing passes without evidence are skipped. Unsupported recorded
+interface. Value propagation, wire substitution, equality elimination, disjunctive
+field domains, zero-test indicators and rewriting compose native proofs. A local
+preprocessing proof that exhausts its budget leaves the original constraints intact. Unsupported recorded
 reasoning returns `unknown`, rather than an unproved UNSAT answer.
 
 For a pure ground QF_FF input, append `(ff-check-native-proof)` after an UNSAT
@@ -21,10 +22,43 @@ polynomial arithmetic and exports them to the Alethe/PAC format below. Its
 Alethe and PAC text. After saving those files, `check_bundle(lemma, directory,
 carcara, ffpacheck)` rebinds them to that exact native lemma and runs both external
 checkers. Z3 is used for AST access, not a second reconstruction solve. A checked
-bundle proves the **field lemma**, not the whole original SMT input. Whole native
-SMT-proof export to Alethe remains unfinished; the reconstructed profiles below
-are separate pipelines and their historical coverage must not be substituted
-for native proof coverage.
+bundle proves the **field lemma**, not the whole original SMT input.
+
+`scripts/ff_native_alethe.py` now also elaborates a supplied native proof into an
+original-input Alethe/PAC proof. It preserves native assertion membership,
+Boolean/equality composition, hypothesis scopes and recorded field evidence.
+Definitional polynomial variables are replaced by their original terms; inverse
+witnesses use the artifact's checked `choice` rule. Small-field Fermat inputs
+become zero in Pacheck's existing quotient arithmetic (`x^p=x`). Polynomial
+rewrites have explicit scaling identities, and local Boolean inferences have
+resolution proofs. There is no second field-solving or reconstruction search.
+
+The exporter is bounded and fails on unsupported native rules or input theories.
+Its current profile is pure ground, single-prime-field SMT with Boolean
+connectives and field ITEs. Arrays, sequences, field-valued UFs and mixed fields
+are outside this **external export** profile; native proof production still
+supports the existing theory combinations. Lean checking is not implemented.
+Eleven focused whole-proof regressions exercise Boolean reasoning, wire
+elimination, domains, both indicator polarities, small-field roots and a
+127-bit prime, with actual Carcara/Pacheck acceptance and mutation rejection.
+This is not a claim of full FMCAD external-checking coverage.
+
+With the matching Python bindings and shared library on the paths:
+
+```sh
+PYTHONPATH=build/python Z3_LIBRARY_PATH=build \
+  python3 scripts/ff_native_alethe.py problem.smt2 --out /tmp/native-alethe \
+  --carcara "$CARCARA" --ffpacheck "$FFPACHECK" --timeout 10
+```
+
+This runs the default proof-producing solver once, exports its proof and checks
+it. A successful receipt requires both external completion markers within the
+whole-pipeline budget. The Python API also exposes `artifacts(original, root)`
+and `check_bundle(original, root, directory, carcara, ffpacheck)`. Rebinding
+requires the retained native proof object: detached PAC files or a Carcara
+acceptance alone do not establish the missing payload binding in the pinned
+artifact checker. The reconstructed profiles below remain separate pipelines;
+their historical coverage must not be substituted for native proof coverage.
 
 ## Earlier reconstructed export profiles
 

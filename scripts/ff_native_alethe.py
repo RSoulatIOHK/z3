@@ -1,0 +1,446 @@
+#!/usr/bin/env python3
+"""Bounded Alethe elaboration of a supplied native proof (no field search).
+
+The input assertions, native Boolean/equality proof and recorded PAC leaves are
+one proof. Auxiliary polynomial variables are substituted by their original
+terms or checked choice witnesses. Carcara checks the resulting original-input
+proof; exact regeneration additionally binds PAC payloads, whose binding is not
+checked by the pinned artifact's ff_pac rule.
+
+Unsupported native steps fail closed. Small-field Fermat inputs are translated
+to zero in Pacheck's finite-field quotient, without assuming a new input axiom.
+"""
+from pathlib import Path
+import re
+import z3
+import ff_certificate as fc
+import ff_boolean_proof as bp
+import ff_native_evidence as ne
+import ff_proof_pipeline as pp
+
+require = fc.require
+
+
+class NativeGraph(bp.Graph):
+    def node(self, op, args=(), data=None):
+        # Native clauses may contain a unary OR wrapper. Its SMT meaning is
+        # exactly its child, including when nested inside a proof fact.
+        if op in ('and', 'or') and len(args) < 2:
+            return args[0] if args else super().node('true' if op == 'and' else 'false')
+        return super().node(op, args, data)
+
+
+class Exporter:
+    def __init__(self, original, root):
+        self.g = NativeGraph(original)
+        self.w = bp.Writer(self.g)
+        self.w.lines = []  # Emit all shared term definitions after elaboration.
+        self.files, self.memo, self.counter = {}, {}, 0
+        self.original = {i: None for i in self.g.assertions}
+        for i in self.original:
+            name = self.name('assertion')
+            self.w.emit(f'(assume {name} {self.g.ref(i)})')
+            self.original[i] = name
+        require(z3.is_app(root) and z3.is_false(root.arg(root.num_args() - 1)), 'native root must prove false')
+        self.root = root
+
+    def name(self, kind):
+        self.counter += 1
+        require(self.counter < 50000, 'native export step limit')
+        return f'{self.g.prefix}{kind}{self.counter}'
+
+    def ref(self, expr):
+        # Parsing is only AST serialization, not a simplification or solver call.
+        return self.g.ref(self.g.expand(fc.parse(expr.sexpr(), max_depth=100000)[0]))
+
+    def step(self, terms, rule, parents=(), args=None, **kw):
+        return self.w.step(terms, rule, parents, args, **kw)
+
+    def transfer(self, source, target, equality, premise):
+        return self.w.transfer(source, target, equality, premise)
+
+    def boolean(self, goal, parents=()):
+        """Elaborate a local propositional inference as checked resolution.
+
+        Field equalities are opaque atoms. This cannot supply missing algebraic
+        reasoning. Only native premise facts participate; no input is re-solved.
+        """
+        prefix = self.name('bool') + '_'
+        atoms, asts = {}, []
+        def term(e):
+            k = e.decl().kind()
+            if z3.is_true(e): return 'true'
+            if z3.is_false(e): return 'false'
+            op = {z3.Z3_OP_AND: 'and', z3.Z3_OP_OR: 'or', z3.Z3_OP_NOT: 'not',
+                  z3.Z3_OP_IMPLIES: '=>', z3.Z3_OP_XOR: 'xor', z3.Z3_OP_ITE: 'ite'}.get(k)
+            if z3.is_eq(e) and z3.is_bool(e.arg(0)): op = '='
+            if op in ('and', 'or') and e.num_args() < 2:
+                return term(e.arg(0)) if e.num_args() else ('true' if op == 'and' else 'false')
+            if op:
+                return '(' + op + ' ' + ' '.join(term(a) for a in e.children()) + ')'
+            key = e.get_id()
+            if key not in atoms:
+                require(len(atoms) < 64, 'local Boolean atom limit')
+                atoms[key] = prefix + 'atom' + str(len(atoms)); asts.append(e)
+            return atoms[key]
+        facts = [term(f) for f, _ in parents] + ['(not ' + term(goal) + ')']
+        text = ''.join(f'(declare-const {n} Bool)\n' for n in atoms.values())
+        text += ''.join('(assert ' + f + ')\n' for f in facts)
+        g = bp.Graph(text); g.prefix = prefix
+        # Substitute the actual opaque atom terms in the printed proof. Their
+        # truth values remain unconstrained throughout propositional search.
+        for a in asts:
+            i = g.names[atoms[a.get_id()]]
+            g.nodes[i] = ('var', (), (self.ref(a), 0))
+        base = bp.Clauses(g)
+        search = bp.Search(base.clauses)
+        sat, root = search.search()
+        require(not sat, 'native step needs non-propositional evidence: ' + goal.sexpr()[:500])
+        writer = bp.Writer(g)
+        anchor = self.name('boolean_lemma')
+        writer.emit(f'(anchor :step {anchor})')
+        writer.base(base)
+        # Parent facts already have proofs in the enclosing scope; only the
+        # negation of the desired conclusion is a new local assumption.
+        for i, (_, name) in enumerate(parents):
+            old = f'{g.prefix}a{i}'
+            writer.lines = [line for line in writer.lines if not line.startswith(f'(assume {old} ')]
+            writer.names[i] = name
+        for record in search.records:
+            a, b, pivot = record['left'], record['right'], record['pivot']
+            value = bp.resolve(search.clauses[a], search.clauses[b], pivot)
+            writer.names.append(writer.step([g.literal(x) for x in value], 'resolution',
+                                            [writer.names[a], writer.names[b]]))
+        writer.step([], 'reordering', [writer.names[root]])
+        target = self.ref(goal)
+        assumption = f'{g.prefix}a{len(parents)}'
+        writer.step([f'(not (not {target}))', 'false'], 'subproof', name=anchor, discharge=[assumption])
+        outside_false = writer.step(['(not false)'], 'false')
+        double = writer.step([f'(not (not {target}))'], 'resolution', [anchor, outside_false])
+        simple = writer.step([f'(= (not (not {target})) {target})'], 'not_simplify')
+        result = writer.transfer(f'(not (not {target}))', target, simple, double)
+        for line in writer.lines: self.w.emit(line)
+        return result
+
+    def rewrite(self, goal):
+        # Normalize each field equality with an explicit nonzero scaling
+        # identity. The residual transformation is purely propositional.
+        parents, pending, seen, variables, cache = [], [goal], set(), {}, {}
+        def polynomial(e, ar):
+            key = e.get_id()
+            if key in cache: return cache[key]
+            k = e.decl().kind()
+            if k == z3.Z3_OP_FF_NUM:
+                value = {(): e.as_long()} if e.as_long() else {}
+            elif k in ne.OPS:
+                value = {(): 1} if k == z3.Z3_OP_FF_MUL else {}
+                for i, a in enumerate(e.children()):
+                    child = polynomial(a, ar)
+                    value = ar.mul(value, child) if k == z3.Z3_OP_FF_MUL else ar.add(
+                        value, child, -1 if k == z3.Z3_OP_FF_NEG else pow(2, i, ar.p) if k == z3.Z3_OP_FF_BITSUM else 1)
+            else:
+                if key not in variables: variables[key] = (len(variables), e)
+                value = {(variables[key][0],): 1}
+            cache[key] = value
+            return value
+        while pending:
+            e = pending.pop()
+            if e.get_id() in seen: continue
+            seen.add(e.get_id())
+            if not (z3.is_eq(e) and isinstance(e.arg(0).sort(), z3.FiniteFieldSortRef)):
+                pending.extend(a for a in e.children() if z3.is_bool(a)); continue
+            a, b = e.children(); field = a.sort(); ar = fc.Arithmetic(field.size())
+            value = ar.add(polynomial(a, ar), polynomial(b, ar), -1)
+            scale = pow(value[sorted(value)[0]], -1, ar.p) if value else 1
+            value = ar.mul(value, {(): scale})
+            vs = {i: v for i, v in variables.values()}
+            pieces = []
+            for mon, coeff in sorted(value.items()):
+                product = z3.FiniteFieldVal(coeff, field)
+                for v in mon: product = product * vs[v]
+                pieces.append(product)
+            poly = z3.FiniteFieldVal(0, field)
+            for piece in pieces: poly = poly + piece
+            canonical = poly == z3.FiniteFieldVal(0, field)
+            zero, one = f'(as ff0 {bp.sort_text(ar.p)})', f'(as ff1 {bp.sort_text(ar.p)})'
+            scale_text = f'(as ff{scale} {bp.sort_text(ar.p)})'
+            identity = self.step([f'(= (ff.mul {scale_text} (ff.add {self.ref(a)} (ff.neg {self.ref(b)}))) '
+                                  f'(ff.mul {one} (ff.add {self.ref(poly)} (ff.neg {zero}))))'], 'poly_simp')
+            equivalence = self.step([f'(= {self.ref(e)} {self.ref(canonical)})'], 'poly_simp_rel', [identity])
+            parents.append((e == canonical, equivalence))
+            if not value or set(value) == {()}:
+                # Constant field equality: poly_simp first removes arithmetic,
+                # then eq_simplify checks the two literal constants.
+                constant = z3.FiniteFieldVal(value.get((), 0), field)
+                reduced = constant == z3.FiniteFieldVal(0, field)
+                ident = self.step([self.ref(poly == constant)], 'poly_simp')
+                eq = self.step([self.ref(canonical == reduced)], 'cong', [ident])
+                parents.append((canonical == reduced, eq))
+                if not value:
+                    proved = self.step([self.ref(reduced)], 'refl')
+                    parents.append((reduced, proved))
+                else:
+                    proved = self.constant_disequality(reduced)
+                    parents.append((z3.Not(reduced), proved))
+        return self.boolean(goal, parents)
+
+    def constant_disequality(self, equation):
+        # Carcara's generic eq_simplify does not evaluate finite-field
+        # constants. Elaborate c != 0 as the one-step PAC inference c/c = 1;
+        # the input equality is a discharged hypothesis, never an axiom.
+        a, b = equation.children()
+        require(a.decl().kind() == z3.Z3_OP_FF_NUM and b.decl().kind() == z3.Z3_OP_FF_NUM
+                and b.as_long() == 0 and a.as_long() != 0, 'constant disequality profile')
+        p, c = a.sort().size(), a.as_long()
+        anchor, assumption = self.name('constant_lemma'), self.name('constant_assumption')
+        self.w.emit(f'(anchor :step {anchor})')
+        self.w.emit(f'(assume {assumption} {self.ref(equation)})')
+        converted = self.step([f'(not (set.is_empty (@ff.variety (@ff.ideal {self.ref(a)}))))'],
+                              'ff_poly_conversion', [assumption])
+        pac = f'm {p};\na 1 {c};\nl 2 1*({pow(c,-1,p)}), 1;\nunsat\n'
+        self.step([], 'ff_pac', [converted], [pac])
+        self.files[anchor + '.pac'] = pac
+        self.step([f'(not {self.ref(equation)})', 'false'], 'subproof', name=anchor, discharge=[assumption])
+        false = self.step(['(not false)'], 'false')
+        return self.step([f'(not {self.ref(equation)})'], 'resolution', [anchor, false])
+
+    def ite_axiom(self, goal):
+        pending, seen, parents = [goal], set(), []
+        while pending:
+            e = pending.pop()
+            if e.get_id() in seen: continue
+            seen.add(e.get_id()); pending.extend(e.children())
+            if z3.is_app_of(e, z3.Z3_OP_ITE) and not z3.is_bool(e):
+                c, a, b = e.children()
+                meaning = z3.If(c, e == a, e == b)
+                target = self.ref(meaning)
+                truth = self.step(['true'], 'true')
+                identity = self.step([f'(= true (and true {target}))'], 'ite_intro')
+                conj = self.transfer('true', f'(and true {target})', identity, truth)
+                proved = self.step([target], 'and', [conj], ['1'])
+                parents.append((meaning, proved))
+        return self.boolean(goal, parents)
+
+    def fold_clause(self, assumptions, anchor):
+        literals = [z3.Not(a) for a in assumptions]
+        ctx = self.root.ctx
+        clause = literals[0] if len(literals) == 1 else z3.Or(*literals) if literals else z3.BoolVal(False, ctx=ctx)
+        clause_text = self.ref(clause)
+        false = self.step(['(not false)'], 'false')
+        if len(literals) < 2:
+            unit = self.step([clause_text], 'resolution', [anchor, false]) if literals else self.step(['false'], 'reordering', [anchor])
+        else:
+            negs = [self.step([clause_text, f'(not (not {self.ref(a)}))'], 'or_neg', args=[str(i)])
+                    for i,a in enumerate(assumptions)]
+            unit = self.step([clause_text], 'resolution', [anchor, false] + negs)
+        return clause, unit
+
+    def field(self, proof):
+        ne.check_lemma(proof)
+        evidence = proof.decl().params()[2]
+        problem, dag, bindings, origins = ne.encode(evidence, with_bindings=True)
+        _, cert, values = fc.verify(problem, dag)
+        p = int(cert[':modulus']); sort = bp.sort_text(p)
+        zero, one = f'(as ff0 {sort})', f'(as ff1 {sort})'
+        assumptions = evidence.arg(0).children()
+        anchor = self.name('field_lemma')
+        self.w.emit(f'(anchor :step {anchor})')
+        names = []
+        for a in assumptions:
+            name = self.name('field_assumption'); names.append(name)
+            self.w.emit(f'(assume {name} {self.ref(a)})')
+        witnesses = {}
+        mapped = []
+        for binding in bindings:
+            if isinstance(binding, tuple):
+                _, eq = binding; a, b = map(self.ref, eq.children())
+                binder = self.name('inverse')
+                choice = f'(choice (({binder} {sort})) (= (ff.mul {binder} (ff.add {a} (ff.neg {b}))) {one}))'
+                witnesses[eq.get_id()] = choice; mapped.append(choice)
+            else: mapped.append(self.ref(binding))
+        proofs, normalized, polys = [], [], []
+        # Pacheck checks arithmetic modulo v^p=v. Each native Fermat input
+        # is therefore zero in its proof language. Replace only those inputs
+        # whose native origin was independently verified by ne.encode; all
+        # other inputs retain their exact polynomial. The unchanged inference
+        # DAG is checked by Pacheck in that quotient, including final closure.
+        cert = dict(cert)
+        cert[':inputs'] = [[] if origin == 'fermat' else raw
+                           for raw, origin in zip(cert[':inputs'], origins)]
+        for raw, origin in zip(cert[':inputs'], origins):
+            value = fc.decode_polynomial(raw, fc.Arithmetic(p), len(mapped))
+            poly = fc.sexpr(fc.polynomial_term(value, p, mapped)); polys.append(poly)
+            canonical = f'(= {poly} {zero})'; normalized.append(canonical)
+            if origin is None or origin == 'fermat':
+                # Definitions are identities after substituting original terms.
+                proofs.append(self.step([canonical], 'poly_simp')); continue
+            lit, name = assumptions[origin], names[origin]
+            eq = lit.arg(0) if z3.is_not(lit) else lit
+            a, b = map(self.ref, eq.children()); equation = self.ref(lit)
+            if z3.is_not(lit):
+                choice = witnesses[eq.get_id()]
+                value_text = f'(ff.add (ff.mul (ff.add {a} (ff.neg {b})) {choice}) (as ff{p-1} {sort}))'
+                positive = f'(= {value_text} {zero})'
+                conversion = self.step([f'(= {equation} {positive})'], 'ff_diseq', args=[a,b,choice])
+                name = self.transfer(equation, positive, conversion, name)
+                equation, a, b = positive, value_text, zero
+            identity = self.step([f'(= (ff.mul {one} (ff.add {a} (ff.neg {b}))) '
+                                  f'(ff.mul {one} (ff.add {poly} (ff.neg {zero}))))'], 'poly_simp')
+            equivalence = self.step([f'(= {equation} {canonical})'], 'poly_simp_rel', [identity])
+            proofs.append(self.transfer(equation, canonical, equivalence, name))
+        conj = proofs[0] if len(proofs) == 1 else self.step(['(and ' + ' '.join(normalized) + ')'], 'and_intro', proofs)
+        conversion = self.step(['(not (set.is_empty (@ff.variety (@ff.ideal ' + ' '.join(polys) + '))))'], 'ff_poly_conversion', [conj])
+        pac = pp.export_pac(cert, values)
+        # The payload is a string literal, as in the artifact's existing bridge.
+        self.step([], 'ff_pac', [conversion], [pac])
+        self.files[anchor + '.pac'] = pac
+        discharged = [f'(not {self.ref(a)})' for a in assumptions] + ['false']
+        self.step(discharged, 'subproof', name=anchor, discharge=names)
+        # Convert the derived clause to the native lemma's (possibly weakened)
+        # Boolean fact through an explicit propositional inference.
+        clause, unit = self.fold_clause(assumptions, anchor)
+        return self.boolean(proof.arg(0), [(clause, unit)])
+
+    def convert(self, proof, env=None, depth=0):
+        env = {} if env is None else env
+        require(depth < 256, 'native proof nesting limit')
+        key = (proof.get_id(), tuple(sorted(env.items())))
+        if key in self.memo: return self.memo[key]
+        kind = proof.decl().kind(); fact = proof.arg(proof.num_args() - 1)
+        if kind == z3.Z3_OP_PR_ASSERTED:
+            i = self.g.expand(fc.parse(fact.sexpr(), max_depth=100000)[0])
+            require(i in self.original, 'native assertion is absent from original input')
+            result = self.original[i]
+        elif kind == z3.Z3_OP_PR_HYPOTHESIS:
+            require(fact.get_id() in env, 'open native hypothesis')
+            result = env[fact.get_id()]
+        elif kind == z3.Z3_OP_PR_TH_LEMMA:
+            result = self.field(proof)
+        elif kind == z3.Z3_OP_PR_LEMMA:
+            hypotheses, todo, seen = {}, [proof.arg(0)], set()
+            while todo:
+                node = todo.pop()
+                if node.get_id() in seen: continue
+                seen.add(node.get_id())
+                if node.decl().kind() == z3.Z3_OP_PR_LEMMA: continue
+                if node.decl().kind() == z3.Z3_OP_PR_HYPOTHESIS:
+                    h = node.arg(0); hypotheses[h.get_id()] = h
+                else: todo.extend(node.children()[:-1])
+            anchor = self.name('native_lemma'); self.w.emit(f'(anchor :step {anchor})')
+            local, names = dict(env), []
+            for i,h in hypotheses.items():
+                name = self.name('hypothesis'); names.append(name); local[i] = name
+                self.w.emit(f'(assume {name} {self.ref(h)})')
+            contradiction = self.convert(proof.arg(0), local, depth + 1)
+            false = self.step(['(not false)'], 'false')
+            self.step([], 'resolution', [contradiction, false])
+            self.step([f'(not {self.ref(h)})' for h in hypotheses.values()] + ['false'],
+                      'subproof', name=anchor, discharge=names)
+            clause, unit = self.fold_clause(list(hypotheses.values()), anchor)
+            result = self.boolean(fact, [(clause, unit)])
+        else:
+            parents = [(p.arg(p.num_args()-1), self.convert(p, env, depth + 1)) for p in proof.children()[:-1]]
+            rules = {z3.Z3_OP_PR_REFLEXIVITY:'refl', z3.Z3_OP_PR_SYMMETRY:'symm',
+                     z3.Z3_OP_PR_TRANSITIVITY:'trans', z3.Z3_OP_PR_TRANSITIVITY_STAR:'trans',
+                     z3.Z3_OP_PR_MONOTONICITY:'cong'}
+            if kind in rules:
+                result = self.step([self.ref(fact)], rules[kind], [name for _,name in parents])
+            elif kind == z3.Z3_OP_PR_REWRITE and z3.is_eq(fact) and not z3.is_bool(fact.arg(0)):
+                result = self.step([self.ref(fact)], 'poly_simp')
+            elif kind == z3.Z3_OP_PR_REWRITE:
+                require(not parents, 'rewrite with parents')
+                result = self.rewrite(fact)
+            elif kind == z3.Z3_OP_PR_DEF_AXIOM:
+                require(not parents, 'Boolean axiom with parents')
+                result = self.ite_axiom(fact)
+            elif kind in [z3.Z3_OP_PR_MODUS_PONENS, z3.Z3_OP_PR_UNIT_RESOLUTION,
+                          z3.Z3_OP_PR_AND_ELIM, z3.Z3_OP_PR_NOT_OR_ELIM,
+                          z3.Z3_OP_PR_IFF_TRUE, z3.Z3_OP_PR_IFF_FALSE,
+                          z3.Z3_OP_PR_REWRITE]:
+                result = self.boolean(fact, parents)
+            else: raise fc.Invalid('unsupported native proof rule: ' + str(proof.decl().name()))
+        self.memo[key] = result
+        return result
+
+    def export(self):
+        root = self.convert(self.root)
+        false = self.step(['(not false)'], 'false')
+        self.step([], 'resolution', [root, false])
+        self.files['proof.alethe'] = '\n'.join(self.g.definitions() + self.w.lines) + '\n'
+        require(sum(len(t.encode()) for t in self.files.values()) <= pp.LIMIT, 'native bundle size limit')
+        return self.files
+
+
+def artifacts(original, root):
+    return Exporter(original, root).export()
+
+
+def check_bundle(original, root, directory, carcara, ffpacheck, timeout=10):
+    import time
+    deadline = time.monotonic() + timeout
+    def remaining():
+        seconds = deadline - time.monotonic()
+        require(seconds > 0, 'native whole-proof checking timeout')
+        return seconds
+    directory = Path(directory)
+    require((directory/'problem.smt2').read_text() == original, 'original input changed')
+    files = artifacts(original, root)
+    for name, expected in files.items():
+        require((directory/name).read_text() == expected, 'native whole-proof binding mismatch: ' + name)
+    runs = []
+    for name in files:
+        if not name.endswith('.pac'): continue
+        result = pp.run([str(ffpacheck), str(directory/name)], remaining())
+        output = re.sub(r'\x1b\[[0-9;]*m', '', result['stdout'])
+        require('PROOF CHECK: SUCCEEDED' in [s.strip() for s in output.splitlines()], 'PAC completion marker missing')
+        runs.append(result)
+    result = pp.run([str(carcara), 'check', str(directory/'proof.alethe'), str(directory/'problem.smt2'),
+                     '--expand-let-bindings', '--apply-function-defs', '--ff-pac-solver', str(ffpacheck)], remaining())
+    require(result['stdout'].strip() == 'valid', 'Alethe completion marker missing')
+    return {'carcara':result, 'pac':runs}
+
+
+def main():
+    import argparse
+    import json
+    import time
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('input', type=Path)
+    parser.add_argument('--out', type=Path, required=True, help='new output directory')
+    parser.add_argument('--carcara', type=Path, required=True)
+    parser.add_argument('--ffpacheck', type=Path, required=True)
+    parser.add_argument('--timeout', type=float, default=10, help='whole-pipeline time budget in seconds')
+    args = parser.parse_args()
+    require(args.timeout > 0, 'timeout must be positive')
+    original = pp.read(args.input)
+    args.out.mkdir(parents=True, exist_ok=False)
+    started = time.monotonic()
+    ctx = z3.Context(proof=True)
+    solver = z3.Solver(ctx=ctx)
+    solver.set(timeout=max(1, int(args.timeout * 1000)))
+    solver.from_string(original)
+    require(solver.check() == z3.unsat, 'native solver did not produce UNSAT')
+    root = solver.proof()
+    files = artifacts(original, root)
+    (args.out/'problem.smt2').write_text(original)
+    for name, value in files.items(): (args.out/name).write_text(value)
+    remaining = args.timeout - (time.monotonic() - started)
+    require(remaining > 0, 'whole-pipeline timeout before external checking')
+    checks = check_bundle(original, root, args.out, args.carcara, args.ffpacheck, remaining)
+    elapsed = time.monotonic() - started
+    require(elapsed <= args.timeout, 'whole-pipeline timeout')
+    receipt = {'status':'checked', 'profile':'native whole-proof Alethe/PAC',
+               'z3_version':z3.get_version_string(), 'seconds':elapsed,
+               'files':{name:pp.digest(args.out/name) for name in ['problem.smt2'] + list(files)},
+               'checks':checks}
+    (args.out/'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+    print(json.dumps({k:v for k,v in receipt.items() if k not in ['files', 'checks']}))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (fc.Invalid, z3.Z3Exception, OSError, RecursionError) as error:
+        import sys
+        print('native Alethe proof not checked: ' + str(error), file=sys.stderr)
+        sys.exit(1)

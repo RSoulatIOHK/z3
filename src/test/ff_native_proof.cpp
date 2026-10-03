@@ -82,6 +82,48 @@ void tst_ff_native_proof() {
         many = m.mk_and(many, m.mk_or(atom, m.mk_not(atom)));
     }
     ENSURE(!ff::check_boolean_tautology(m, many)); // Bound exhaustion is inconclusive.
+    // Proof-producing preprocessing must bind both original equations. Check
+    // both indicator polarities and characteristic two, where -1 = 1.
+    for (unsigned prime : {2u, 7u, 101u}) {
+        sort_ref f(ff.mk_sort(rational(prime)), m);
+        expr_ref z(m.mk_const("indicator", f), m), u(m.mk_const("inverse", f), m);
+        expr_ref input(m.mk_const("input", f), m);
+        expr_ref zero(ff.mk_numeral(rational(0), f), m), unit(ff.mk_numeral(rational(1), f), m);
+        for (bool nonzero : {false, true}) {
+            expr_ref negated(prime == 2 ? z.get() : ff.mk_mul(ff.mk_numeral(rational(prime - 1), f), z), m);
+            expr_ref factor(nonzero ? ff.mk_add(unit, negated) : z.get(), m);
+            expr_ref guard(m.mk_eq(ff.mk_mul(input, factor), zero), m);
+            expr_ref rhs(ff.mk_mul(input, u), m);
+            if (!nonzero) rhs = ff.mk_add(unit, rhs);
+            expr_ref definition(m.mk_eq(z, rhs), m);
+            base_dependent_expr_state state(m);
+            state.add(dependent_expr(m, guard, m.mk_asserted(guard), nullptr));
+            state.add(dependent_expr(m, definition, m.mk_asserted(definition), nullptr));
+            ff_zero_test_simplifier pass(m, state);
+            pass.reduce();
+            ENSURE(state.qtail() == 3);
+            ENSURE(state[0].pr() && m.get_fact(state[0].pr()) == state[0].fml());
+            proof_ref denied(m.mk_asserted(m.mk_not(state[0].fml())), m);
+            proof_ref root(m.mk_unit_resolution({state[0].pr(), denied}, m.mk_false()), m);
+            ENSURE(check_native(m, root) >= 2);
+        }
+        expr_ref domain(m.mk_or(m.mk_eq(input, zero), m.mk_eq(input, unit)), m);
+        base_dependent_expr_state state(m);
+        state.add(dependent_expr(m, domain, m.mk_asserted(domain), nullptr));
+        ff_disjunctive_simplifier pass(m, params, state);
+        pass.reduce();
+        ENSURE(state[0].fml() != domain && state[0].pr());
+        proof_ref denied(m.mk_asserted(m.mk_not(state[0].fml())), m);
+        proof_ref root(m.mk_unit_resolution({state[0].pr(), denied}, m.mk_false()), m);
+        ENSURE(check_native(m, root) >= 2);
+    }
+    {
+        expr_ref_vector premises(m);
+        premises.push_back(m.mk_eq(ff.mk_mul(x, x), three));
+        params_ref exhausted;
+        exhausted.set_uint("ff.max_steps", 0);
+        ENSURE(!ff::record_refutation(m, premises, exhausted));
+    }
     proof_ref retained(m);
     {
         scoped_ptr<solver> s = mk_smt2_solver(m, params, symbol("QF_FF"));

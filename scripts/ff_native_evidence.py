@@ -24,7 +24,7 @@ def signed(lit):
     return lit.get_id(), negative
 
 
-def encode(evidence):
+def encode(evidence, with_bindings=False):
     """Bind the native definition/input indices and replay through the v1 DAG checker."""
     require(z3.is_app(evidence) and str(evidence.decl().name()) == 'ff-pac'
             and evidence.num_args() == 2, 'malformed native FF evidence')
@@ -38,11 +38,13 @@ def encode(evidence):
     p = field.size()
     ar = fc.Arithmetic(p)
     terms, equations, variables = {}, [], []
+    bindings, origins = [], []
 
-    def fresh():
+    def fresh(binding):
         require(len(variables) < 4096, 'native variable limit')
         v = len(variables)
         variables.append('v' + str(v))
+        bindings.append(binding)
         return {(v,): 1}
 
     def term(t):
@@ -67,8 +69,9 @@ def encode(evidence):
                 for i, arg in enumerate(args):
                     if op == z3.Z3_OP_FF_MUL: value = ar.mul(value, arg)
                     else: value = ar.add(value, arg, -1 if op == z3.Z3_OP_FF_NEG else pow(2, i, p) if op == z3.Z3_OP_FF_BITSUM else 1)
-                v = fresh()
+                v = fresh(a)
                 equations.append(ar.add(v, value, -1))
+                origins.append(None)
                 value = v
             elif op == z3.Z3_OP_FF_NUM:
                 c = a.as_long(); require(0 <= c < p, 'native coefficient range')
@@ -76,25 +79,27 @@ def encode(evidence):
             else:
                 # A foreign field-valued application is opaque; its arguments
                 # and congruence are premises of the surrounding native proof.
-                value = fresh()
+                value = fresh(a)
             terms[key] = value
             pending.pop()
         return terms[t.get_id()]
 
-    for literal in ps.children():
+    for premise_index, literal in enumerate(ps.children()):
         positive = not z3.is_not(literal)
         eq = literal if positive else literal.arg(0)
         require(z3.is_eq(eq) and eq.arg(0).sort().eq(field) and eq.arg(1).sort().eq(field), 'native premise sort')
         left, right = term(eq.arg(0)), term(eq.arg(1))
         value = ar.add(left, right, -1)
         if not positive:
-            value = ar.add(ar.mul(fresh(), value), {(): p - 1})
+            value = ar.add(ar.mul(fresh(('inverse', eq)), value), {(): p - 1})
         equations.append(value)
+        origins.append(premise_index)
     if p <= 31:
         # Every F_p value, including definitional and inverse variables,
         # satisfies Fermat. These are not arbitrary extra assumptions.
         for v in range(len(variables)):
             equations.append(ar.add({(v,) * p: 1}, {(v,): 1}, -1))
+            origins.append("fermat")
     require(len(equations) <= 4096, 'external profile equation limit')
     nodes, ids, pending = [], {}, [root]
     while pending:
@@ -138,7 +143,7 @@ def encode(evidence):
     dag = fc.sexpr(['ff-certificate', ':version', '1', ':modulus', str(p), ':variables', variables,
                    ':inputs', [raw(f) for f in equations], ':nodes', nodes, ':root', str(ids[root.get_id()])]) + '\n'
     fc.verify(problem, dag)
-    return problem, dag
+    return (problem, dag, bindings, origins) if with_bindings else (problem, dag)
 
 
 def check_lemma(lemma):
