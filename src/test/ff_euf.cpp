@@ -21,8 +21,9 @@ void tst_ff_euf() {
     params_ref p;
     p.set_bool("smt", true);
     p.set_bool("euf", true);
-    // Replay FF hints in the callback below. The generic online checker
-    // currently cannot bind the SAT/SMT frontend's incremental scope guards.
+    p.set_bool("smt.proof.check", true);
+    // Also replay each field DAG below: the outer checker can still use its
+    // SMT fallback when SAT has weakened/simplified the clause around a hint.
     scoped_ptr<solver> s = mk_smt2_solver(m, p);
     expr_ref_vector proofs(m);
     unsigned count = 0;
