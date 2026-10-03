@@ -919,6 +919,17 @@ static void test_ff_integration() {
     smt::context disabled(m, no_bv); disabled.set_logic(symbol("QF_UF"));
     disabled.updt_params(tiny); disabled.assert_expr(eq);
     ENSURE(disabled.check() == l_undef);
+    // Late fields may first occur in assumptions, not
+    // asserted formulas. Setup must see them before internalization too.
+    expr_ref nonresidue(m.mk_eq(square, ff.mk_numeral(rational(3), field)), m);
+    smt::context assumed(m, sp); assumed.set_logic(symbol("QF_UF"));
+    assumed.assert_expr(b); ENSURE(assumed.check() == l_true);
+    ENSURE(!assumed.get_theory(ff.get_fid()));
+    assumed.push(); assumed.push();
+    expr* assumptions[] = {nonresidue};
+    ENSURE(assumed.check(1, assumptions) == l_false);
+    assumed.pop(2);
+    assumed.assert_expr(eq); ENSURE(assumed.check() == l_true);
     for (bool reverse : {false, true}) {
         ast_manager mm; reg_decl_plugins(mm);
         cmd_context commands(false, &mm);
