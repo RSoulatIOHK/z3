@@ -41,15 +41,30 @@ class ff_rewriter {
     };
     struct monomial_order {
         ff_util const &u;
+        void factors(expr* e, ptr_vector<expr>& result) const {
+            ptr_vector<expr> pending;
+            pending.push_back(e);
+            while (!pending.empty()) {
+                auto t = pending.back();
+                pending.pop_back();
+                if (u.is_mul(t)) {
+                    auto a = to_app(t);
+                    for (unsigned i = a->get_num_args(); i-- > 0;)
+                        pending.push_back(a->get_arg(i));
+                }
+                else
+                    result.push_back(t);
+            }
+        }
         bool operator()(expr *a, expr *b) const {
-            bool am = u.is_mul(a), bm = u.is_mul(b);
-            unsigned na = am ? to_app(a)->get_num_args() : 1;
-            unsigned nb = bm ? to_app(b)->get_num_args() : 1;
+            ptr_vector<expr> left, right;
+            factors(a, left);
+            factors(b, right);
+            unsigned na = left.size(), nb = right.size();
             if (na != nb)
                 return na < nb;
             for (unsigned i = 0; i < na; ++i) {
-                expr *x = am ? to_app(a)->get_arg(i) : a;
-                expr *y = bm ? to_app(b)->get_arg(i) : b;
+                expr *x = left[i], *y = right[i];
                 if (x != y)
                     return x->get_id() < y->get_id();
             }
@@ -102,7 +117,9 @@ class ff_rewriter {
             expr_ref base(a, m);
             if (u.is_mul(a)) {
                 expr_ref_vector factors(m);
-                for (expr *arg : *to_app(a)) {
+                ptr_vector<expr> flat;
+                monomial_order{u}.factors(a, flat);
+                for (expr *arg : flat) {
                     if (u.is_numeral(arg, value))
                         coeff = mod(coeff * value, p);
                     else
@@ -139,9 +156,12 @@ class ff_rewriter {
         for (auto const &[term, coeff] : terms) {
             expr_ref_vector factors(m);
             // Flatten a monomial when restoring its coefficient.
-            if (u.is_mul(term))
-                for (expr *arg : *to_app(term))
+            if (u.is_mul(term)) {
+                ptr_vector<expr> flat;
+                monomial_order{u}.factors(term, flat);
+                for (expr *arg : flat)
                     factors.push_back(arg);
+            }
             else
                 factors.push_back(term);
             args.push_back(product(factors, coeff, s));

@@ -63,10 +63,8 @@ public:
             return reduce(r, s, w + 1);
         }
         if (ff.is_add(a) || ff.is_mul(a)) {
-            r = args.get(0);
-            for (unsigned i = 1; i < args.size(); ++i)
-                r = binary(r, args.get(i), s, ff.is_mul(a));
-            return r;
+            SASSERT(args.size() == 2);
+            return binary(args.get(0), args.get(1), s, ff.is_mul(a));
         }
         if (ff.is_bitsum(a)) {
             // Horner's identity holds modulo p without Boolean/no-wrap assumptions.
