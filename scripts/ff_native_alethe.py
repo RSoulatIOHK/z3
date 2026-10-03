@@ -36,6 +36,7 @@ class Exporter:
         self.w = bp.Writer(self.g)
         self.w.lines = []  # Emit all shared term definitions after elaboration.
         self.files, self.memo, self.counter = {}, {}, 0
+        self.closed = {}
         self.ast_nodes, self.ast_pins = {}, []
         self.original = {i: None for i in self.g.assertions}
         for i in self.original:
@@ -393,7 +394,7 @@ class Exporter:
     def convert(self, proof, env=None, depth=0):
         env = {} if env is None else env
         require(depth < 256, 'native proof nesting limit')
-        key = (proof.get_id(), tuple(sorted(env.items())))
+        key = (proof.get_id(), () if self.closed.get(proof.get_id(), False) else tuple(sorted(env.items())))
         if key in self.memo: return self.memo[key]
         kind = proof.decl().kind(); fact = proof.arg(proof.num_args() - 1)
         if kind == z3.Z3_OP_PR_ASSERTED:
@@ -509,6 +510,26 @@ class Exporter:
         return result
 
     def export(self):
+        # Emit closed native subproofs in the outer scope before any consumer
+        # opens an anchor. Reusing a step created inside a sibling anchor would
+        # violate Alethe scope, even if the underlying theorem is closed.
+        # Open proofs retain the full hypothesis environment in their cache key.
+        pending, ordered = [self.root], []
+        while pending:
+            node = pending[-1]; key = node.get_id()
+            if key in self.closed:
+                pending.pop(); continue
+            require(len(self.closed) < 100000, 'native proof DAG node limit')
+            parents = node.children()[:-1]
+            missing = [p for p in parents if p.get_id() not in self.closed]
+            if missing:
+                pending.extend(missing); continue
+            kind = node.decl().kind()
+            self.closed[key] = kind == z3.Z3_OP_PR_LEMMA or (
+                kind != z3.Z3_OP_PR_HYPOTHESIS and all(self.closed[p.get_id()] for p in parents))
+            ordered.append(node); pending.pop()
+        for node in ordered:
+            if self.closed[node.get_id()]: self.convert(node)
         root = self.convert(self.root)
         false = self.step(['(not false)'], 'false')
         self.step([], 'resolution', [root, false])
