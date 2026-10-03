@@ -155,6 +155,39 @@ class Exporter:
         return result
 
     def rewrite(self, goal):
+        # Equality symmetry is independent of the size or meaning of its
+        # operands. Expanding a shared circuit just to exchange the two sides
+        # can be exponential; the standard Alethe rule checks the exact swap.
+        if z3.is_eq(goal):
+            left, right = goal.children()
+            if left.eq(right):
+                return self.step([self.ref(goal)], 'refl')
+            if z3.is_eq(left) and z3.is_eq(right) and left.arg(0).eq(right.arg(1)) and left.arg(1).eq(right.arg(0)):
+                return self.step([self.ref(goal)], 'eq_symmetric')
+        # First try the propositional rewrite with field equalities treated as
+        # opaque atoms. Their reflexivity and symmetry need no polynomial
+        # expansion, even when nested below not/and/ite. Every added bridge is
+        # checked by an ordinary Alethe equality rule.
+        simple, todo, visited = [], [goal], set()
+        while todo:
+            e = todo.pop()
+            if e.get_id() in visited: continue
+            visited.add(e.get_id())
+            if z3.is_eq(e) and isinstance(e.arg(0).sort(), z3.FiniteFieldSortRef):
+                a, b = e.children()
+                if a.eq(b):
+                    simple.append((e, self.step([self.ref(e)], 'refl')))
+                elif a.get_id() > b.get_id():
+                    bridge = e == (b == a)
+                    simple.append((bridge, self.step([self.ref(bridge)], 'eq_symmetric')))
+            else:
+                todo.extend(a for a in e.children() if z3.is_bool(a))
+        try:
+            return self.boolean(goal, simple)
+        except fc.Invalid:
+            # Algebraic rewrites still require the bounded ring normalization
+            # below. A failed propositional search supplies no proof premise.
+            pass
         # Normalize each field equality with an explicit nonzero scaling
         # identity. The residual transformation is purely propositional.
         parents, pending, seen, variables, cache = [], [goal], set(), {}, {}
