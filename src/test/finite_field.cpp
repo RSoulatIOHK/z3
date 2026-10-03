@@ -1263,6 +1263,25 @@ static void test_ff_nested_zero_test() {
     }
 }
 
+// A directly invoked simplifier must not drop a zero coefficient in a guard.
+// For x=1, z=1, u=0 these two equations hold, but z=ite(x=0,1,0) does not.
+static void test_ff_vacuous_zero_test_guard() {
+    ast_manager m;
+    reg_decl_plugins(m);
+    ff_util ff(m);
+    sort_ref field(ff.mk_sort(rational(101)), m);
+    expr_ref x(m.mk_const("x", field), m), z(m.mk_const("z", field), m), u(m.mk_const("u", field), m);
+    expr_ref zero(ff.mk_numeral(rational(0), field), m), one(ff.mk_numeral(rational(1), field), m);
+    expr_ref guard(m.mk_eq(ff.mk_mul(zero, ff.mk_mul(x, z)), zero), m);
+    expr_ref definition(m.mk_eq(z, ff.mk_add(one, ff.mk_mul(x, u))), m);
+    base_dependent_expr_state state(m);
+    state.add(dependent_expr(m, guard, nullptr, nullptr));
+    state.add(dependent_expr(m, definition, nullptr, nullptr));
+    ff_zero_test_simplifier pass(m, state);
+    pass.reduce();
+    ENSURE(state.qtail() == 2);
+}
+
 // Duplicate zero tests must collapse before algebraic solving, even when
 // their independent inverse witnesses occur in the original definitions first.
 static void test_ff_zero_test_wire_priority() {
@@ -1317,6 +1336,7 @@ void tst_finite_field() {
     test_ff_zero_test_wire_priority();
     test_ff_wire_dependencies();
     test_ff_nested_zero_test();
+    test_ff_vacuous_zero_test_guard();
     test_ff_integration();
     test_ff_tiny();
     test_ff_f4();

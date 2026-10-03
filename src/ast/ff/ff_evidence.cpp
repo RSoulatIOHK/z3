@@ -327,8 +327,16 @@ namespace ff {
         smt_params_helper opts(params);
         engine e(ff_util(m).modulus(field), m.limit(), opts.ff_max_steps(), opts.ff_max_terms(), false, false, false);
         configure_engine(e, opts);
-        recorded_problem problem(m, field, e, premises);
-        return problem.check() == l_false ? app_ref(problem.evidence(), m) : app_ref(m);
+        try {
+            recorded_problem problem(m, field, e, premises);
+            return problem.check() == l_false ? app_ref(problem.evidence(), m) : app_ref(m);
+        }
+        catch (exhausted const&) {
+            // Encoding itself uses the algebra budget, before the solver's
+            // bounded search handler. All inconclusive local proof attempts
+            // obey this interface's null-evidence contract.
+            return app_ref(m);
+        }
     }
     expr_ref_vector refutation_clause(ast_manager &m, app *proof) {
         expr_ref_vector premises(m), clause(m);

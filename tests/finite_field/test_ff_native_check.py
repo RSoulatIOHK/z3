@@ -50,4 +50,18 @@ for extra in ['(declare-const n Int) (assert (= n 0))',
               '(declare-const a (Array Bool (_ FiniteField 7))) (assert (= (select a true) x))']:
     run(pre.replace('QF_FF', 'ALL') + extra + '\n' + root + check,
         error='native proof checker profile requires pure ground QF_FF')
+# Independent inverse witnesses must not hide equal zero/nonzero indicators.
+# This exercises recorded preprocessing, logical ITE branch axioms and the
+# complete proof's binding to the original two copies of the circuit.
+for prime in [2, 7, 101, 2**127 - 1]:
+    for nonzero in [False, True]:
+        zero, one = f'#f0m{prime}', f'#f1m{prime}'
+        prelude = '(set-option :produce-proofs true)\n(set-logic QF_FF)\n'
+        prelude += ''.join(f'(declare-const {v} (_ FiniteField {prime}))\n' for v in ['x', 'z', 'w', 'u', 'v'])
+        for indicator, inverse in [('z', 'u'), ('w', 'v')]:
+            factor = f'(ff.add {one} (ff.neg {indicator}))' if nonzero else indicator
+            product = f'(ff.mul x {inverse})'
+            rhs = product if nonzero else f'(ff.add {one} {product})'
+            prelude += f'(assert (= (ff.mul x {factor}) {zero}))\n(assert (= {indicator} {rhs}))\n'
+        run(prelude + '(assert (not (= z w)))\n' + check, 1, field=True)
 print('NATIVE_FF_CHECK_PASS')

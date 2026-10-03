@@ -25,9 +25,10 @@ Abstract:
     (ff-solve, ff-sat, ff-unique). It preserves compact theory atoms for
     lazy Boolean search by skipping simplification entirely when a goal
     contains a Boolean uninterpreted constant anywhere (the algebraic
-    decision procedures normalize circuits on their own). Proof mode retains
-    original constraints for passes without evidence, and composes native
-    proofs through wire substitution, solve-eqs and rewriting.
+    decision procedures normalize circuits on their own). Proof mode records
+    local PAC derivations for domains and indicators, retaining original
+    constraints when a local proof is inconclusive, and composes native proofs
+    through value propagation, wire substitution, solve-eqs and rewriting.
 
 Author:
 
@@ -46,6 +47,7 @@ class ff_disjunctive_simplifier : public dependent_expr_simplifier {
 public:
     ff_disjunctive_simplifier(ast_manager &m, params_ref const &p, dependent_expr_state &s);
     char const *name() const override { return "ff-disjunctive"; }
+    bool supports_proofs() const override { return true; }
     void reduce() override;
     void updt_params(params_ref const &p) override;
     void collect_param_descrs(param_descrs &r) override;
@@ -57,6 +59,7 @@ class ff_zero_test_simplifier : public dependent_expr_simplifier {
 public:
     ff_zero_test_simplifier(ast_manager &m, dependent_expr_state &s) : dependent_expr_simplifier(m, s) {}
     char const *name() const override { return "ff-zero-test"; }
+    bool supports_proofs() const override { return true; }
     void reduce() override;
     void collect_statistics(statistics &st) const override;
     void reset_statistics() override { m_added = 0; }
