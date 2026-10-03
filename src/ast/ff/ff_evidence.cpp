@@ -9,6 +9,75 @@ Copyright (c) 2026 Romain Soulat
 #include "math/ff/ff_params.h"
 
 namespace ff {
+    // A bounded propositional truth table discharges Boolean rearrangements
+    // that are valid but do not share a rewriter normal form. Non-Boolean
+    // equalities remain independent atoms, so this cannot assume field facts.
+    // This is exhaustive checking, not a call back into the SMT solver.
+    bool check_boolean_tautology(ast_manager& m, expr* formula) {
+        ptr_vector<expr> pending, order;
+        obj_map<expr, unsigned> indices, atoms;
+        auto connective = [&](expr* e) {
+            if (!is_app(e) || to_app(e)->get_family_id() != m.get_basic_family_id()) return false;
+            auto* a = to_app(e);
+            switch (a->get_decl_kind()) {
+            case OP_TRUE: case OP_FALSE: case OP_NOT: case OP_AND: case OP_OR:
+            case OP_IMPLIES: case OP_XOR: case OP_ITE: return true;
+            case OP_EQ: return m.is_bool(a->get_arg(0));
+            default: return false;
+            }
+        };
+        pending.push_back(formula);
+        while (!pending.empty()) {
+            if (!m.inc() || order.size() >= 10000) return false;
+            expr* e = pending.back();
+            if (indices.contains(e)) { pending.pop_back(); continue; }
+            if (connective(e)) {
+                bool ready = true;
+                for (expr* arg : *to_app(e))
+                    if (!indices.contains(arg)) { pending.push_back(arg); ready = false; }
+                if (!ready) continue;
+            }
+            else {
+                if (atoms.size() >= 12) return false;
+                atoms.insert(e, atoms.size());
+            }
+            indices.insert(e, order.size()); order.push_back(e); pending.pop_back();
+        }
+        svector<bool> values;
+        values.resize(order.size(), false);
+        for (unsigned assignment = 0; assignment < (1u << atoms.size()); ++assignment) {
+            if (!m.inc()) return false;
+            for (unsigned i = 0; i < order.size(); ++i) {
+                expr* e = order[i];
+                unsigned atom;
+                if (atoms.find(e, atom)) { values[i] = (assignment >> atom) & 1; continue; }
+                auto* a = to_app(e);
+                auto v = [&](unsigned j) { return values[indices[a->get_arg(j)]]; };
+                bool result = false;
+                switch (a->get_decl_kind()) {
+                case OP_TRUE: result = true; break;
+                case OP_FALSE: break;
+                case OP_NOT: result = !v(0); break;
+                case OP_EQ: result = v(0) == v(1); break;
+                case OP_XOR: result = v(0) != v(1); break;
+                case OP_IMPLIES: result = !v(0) || v(1); break;
+                case OP_ITE: result = v(0) ? v(1) : v(2); break;
+                case OP_AND:
+                    result = true;
+                    for (unsigned j = 0; j < a->get_num_args(); ++j) result &= v(j);
+                    break;
+                case OP_OR:
+                    for (unsigned j = 0; j < a->get_num_args(); ++j) result |= v(j);
+                    break;
+                default: return false;
+                }
+                values[i] = result;
+            }
+            if (!values.back()) return false;
+        }
+        return true;
+    }
+
     namespace {
         // A deterministic extension of the AST DAG. Every arithmetic term gets
         // a defining equation; foreign applications are opaque field variables.

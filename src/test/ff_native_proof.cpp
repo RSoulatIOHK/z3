@@ -63,6 +63,25 @@ void tst_ff_native_proof() {
     expr_ref square(ff.mk_mul(x, x), m);
     params_ref params;
     params.set_uint("timeout", 10000);
+    // Boolean replay accepts structural tautologies, but must not turn field
+    // equations or incomplete assignments into assumptions.
+    expr_ref a(m.mk_const("a", m.mk_bool_sort()), m), b(m.mk_const("b", m.mk_bool_sort()), m);
+    expr_ref ab(m.mk_or(a, b), m);
+    ENSURE(ff::check_boolean_tautology(m, m.mk_true()));
+    ENSURE(!ff::check_boolean_tautology(m, m.mk_false()));
+    ENSURE(!ff::check_boolean_tautology(m, a));
+    ENSURE(!ff::check_boolean_tautology(m, ab));
+    ENSURE(ff::check_boolean_tautology(m, m.mk_or(m.mk_not(ab), a, b)));
+    ENSURE(ff::check_boolean_tautology(m, m.mk_eq(m.mk_and(a, b), m.mk_not(m.mk_or(m.mk_not(a), m.mk_not(b))))));
+    ENSURE(ff::check_boolean_tautology(m, m.mk_eq(m.mk_ite(a, b, m.mk_not(b)), m.mk_eq(a, b))));
+    ENSURE(!ff::check_boolean_tautology(m, m.mk_eq(x, one)));
+    ENSURE(!ff::check_boolean_tautology(m, m.mk_or(m.mk_eq(x, one), m.mk_eq(x, six))));
+    expr_ref many(m.mk_true(), m);
+    for (unsigned i = 0; i < 13; ++i) {
+        expr_ref atom(m.mk_fresh_const("bounded", m.mk_bool_sort()), m);
+        many = m.mk_and(many, m.mk_or(atom, m.mk_not(atom)));
+    }
+    ENSURE(!ff::check_boolean_tautology(m, many)); // Bound exhaustion is inconclusive.
     proof_ref retained(m);
     {
         scoped_ptr<solver> s = mk_smt2_solver(m, params, symbol("QF_FF"));

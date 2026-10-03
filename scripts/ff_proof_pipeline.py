@@ -369,7 +369,7 @@ def main():
         results['status'] = 'checked'
         results['profile'] = 'z3-ff-alethe-pac-v2' if (args.out / 'boolean-certificate.json').exists() else 'z3-ff-alethe-pac-v1'
         results['tested_checker_sources'] = dict(carcara=CARCARA_REVISION, ffpacheck=FFPACHECK_REVISION,
-            patch='https://github.com/RSoulatIOHK/z3test/blob/ac35efacee5c467cb5717e2d4051d6d3793d99b5/regressions/finite_field/proof_checkers/ffpacheck-completion.patch')
+            patch='https://github.com/RSoulatIOHK/z3test/blob/9a478c477b94fe9f51c2d52d95d483fcf3f700df/regressions/finite_field/proof_checkers/ffpacheck-completion.patch')
         results['total_seconds'] = time.monotonic() - start
         results['files'] = {p.name: dict(sha256=digest(p), bytes=p.stat().st_size)
                             for p in args.out.iterdir() if p.suffix in ('.smt2', '.ffcert', '.alethe', '.pac') or p.name == 'boolean-certificate.json'}
