@@ -47,6 +47,30 @@ def check_whole_proofs(args):
         for term, boolean in [(product, '(and a b)'), (xor, '(xor a b)'), (mux, '(ite c a b)')]:
             cases.append('(declare-const a Bool)(declare-const b Bool)(declare-const c Bool)' +
                          f'(assert (not (= {term} (ite {boolean} {o} {z}))))')
+    for prime in [2, 101]:
+        f, z, o = f'(_ FiniteField {prime})', f'#f0m{prime}', f'#f1m{prime}'
+        cases.append(f'(declare-const x {f})(declare-const y {f})' +
+                     '(assert (= (ff.mul x x) x))(assert (= x y))' +
+                     '(assert (not (= (ff.mul y y) y)))')
+        cases.append('(declare-const a Bool)(declare-const b Bool)' +
+                     f'(declare-const x {f})(declare-const y {f})' +
+                     '(assert (= (ff.mul x x) x))(assert (= (ff.mul y y) y))' +
+                     f'(assert (= x (ite a {o} {z})))(assert (= y (ite b {o} {z})))' +
+                     f'(assert (not (= (ff.mul x y) (ite (and a b) {o} {z}))))')
+    # Swapping equality operands must use symmetry without expanding a
+    # polynomial whose degree doubles at each shared square.
+    field = '(_ FiniteField 101)'
+    shared = ''.join(f'(declare-const {x} {field})' for x in ['x', 'y', 'z'])
+    shared += f'(define-fun t0 () {field} (ff.add x y))'
+    for i in range(1, 5):
+        shared += f'(define-fun t{i} () {field} (ff.mul t{i-1} t{i-1}))'
+    cases.append(shared + '(assert (= t4 z))(assert (not (= z t4)))')
+    # A shared residual-sum proof must be hoisted outside consumer anchors;
+    # copying it under each Boolean assignment would unfold its native DAG.
+    bits = [f'b{i}' for i in range(8)]
+    values = ' '.join(f'(ite {b} #f1m101 #f0m101)' for b in bits)
+    cases.append(''.join(f'(declare-const {b} Bool)' for b in bits) +
+                 f'(assert (= (ff.add {values}) #f0m101))(assert (or {" ".join(bits)}))')
     for prime in [101, 2**127 - 1]:
         f = f'(_ FiniteField {prime})'; zero = f'#f0m{prime}'; one = f'#f1m{prime}'
         declarations = ''.join(f'(declare-const {x} {f})' for x in ['x', 'y', 'z', 'w', 'u', 'v'])
@@ -80,10 +104,16 @@ def check_whole_proofs(args):
         assert solver.check() == unsat
         proof = solver.proof(); del solver
         with tempfile.TemporaryDirectory() as tmp:
-            directory = Path(tmp); files = whole.artifacts(text, proof)
-            (directory/'problem.smt2').write_text(text)
-            for name, value in files.items(): (directory/name).write_text(value)
+            directory = Path(tmp) / 'bundle'
+            _, files = whole.write_and_check_bundle(text, proof, directory, args.carcara, args.ffpacheck)
+            assert files == whole.artifacts(text, proof)
             whole.check_bundle(text, proof, directory, args.carcara, args.ffpacheck)
+            try:
+                whole.write_and_check_bundle(text, proof, directory, args.carcara, args.ffpacheck)
+            except FileExistsError:
+                pass
+            else:
+                raise AssertionError('fresh-bundle API overwrote an existing certificate')
             # Replacing the original assertions or changing the saved payload
             # must be rejected before invoking external tools.
             rejects(lambda: whole.artifacts('(set-logic QF_FF)(assert true)', proof))
