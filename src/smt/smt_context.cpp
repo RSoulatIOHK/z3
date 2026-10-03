@@ -3392,6 +3392,7 @@ namespace smt {
             }
             qhead = m_asserted_formulas.get_qhead();
             unsigned sz = m_asserted_formulas.get_num_formulas();
+            m_setup.setup_for_assertions(qhead);
             while (qhead < sz) {
                 if (get_cancel_flag()) {
                     m_asserted_formulas.commit(qhead);
@@ -3500,6 +3501,7 @@ namespace smt {
     }
 
     void context::init_assumptions(expr_ref_vector const& asms) {
+        m_setup.setup_for(asms.size(), asms.data());
         reset_assumptions();
         m_literal2assumption.reset();
         m_unsat_core.reset();

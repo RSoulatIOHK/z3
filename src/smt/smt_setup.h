@@ -123,8 +123,11 @@ namespace smt {
         }
         symbol const & get_logic() const { return m_logic; }
         void operator()(config_mode cm);
+        // Complete theory registration from each new input batch. This also
+        // covers fields introduced after an incremental context was configured.
+        void setup_for(unsigned n, expr* const* formulas);
+        void setup_for_assertions(unsigned begin);
         void setup_ff();
     };
 }
-
 
