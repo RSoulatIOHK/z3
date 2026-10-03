@@ -55,6 +55,7 @@ namespace euf {
         m_clause_visitor(m),
         m_smt_proof_checker(m, p),
         m_clause(m),
+        m_deleting_atoms(m),
         m_scope_guards(m),
         m_expr_args(m),
         m_values(m)
@@ -770,6 +771,14 @@ namespace euf {
     }
 
     void solver::user_pop(unsigned n) {
+        if (use_drat() && n) {
+            m_deleting_atoms.resize(m_bool_var2expr.size());
+            auto const& sc = m_scopes[m_scopes.size() - n];
+            for (unsigned i = sc.m_var_lim; i < m_var_trail.size(); ++i) {
+                auto v = m_var_trail[i];
+                m_deleting_atoms.set(v, bool_var2expr(v));
+            }
+        }
         pop(n);
     }
 
@@ -1223,6 +1232,7 @@ namespace euf {
     void solver::gc_vars(unsigned num_vars) {
         for (auto* e : m_solvers)
             e->gc_vars(num_vars);
+        m_deleting_atoms.reset();
     }
     
     double solver::get_reward(literal l, ext_constraint_idx idx, sat::literal_occs_fun& occs) const {
