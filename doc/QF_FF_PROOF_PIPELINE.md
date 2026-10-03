@@ -14,7 +14,7 @@ profile for inputs outside the legacy literal-conjunction path.
 ## Run and independently recheck
 
 Build the external checkers using
-[`proof_checkers/README.md`](../tests/finite_field/proof_checkers/README.md).
+[`proof_checkers/README.md`](https://github.com/RSoulatIOHK/z3test/blob/ba8b14e7eafd0f1f3406f35c27a46bd9c7e24d80/regressions/finite_field/proof_checkers/README.md).
 Set `CARCARA` and `FFPACHECK` to their absolute executable paths:
 
 ```sh
@@ -91,7 +91,7 @@ are now intentionally rejected. No upstream issue has been submitted.
 ## Validation
 
 ```sh
-python3 tests/finite_field/test_ff_proof_pipeline.py --z3 build-ff-cmake/z3 \
+python3 z3test/regressions/finite_field/test_ff_proof_pipeline.py --z3 build-ff-cmake/z3 \
   --carcara "$CARCARA" --ffpacheck "$FFPACHECK"
 python3 tests/finite_field/benchmark_ff_proof_pipeline.py \
   --manifest tests/finite_field/results/paper-artifacts/manifest.json \
@@ -136,7 +136,7 @@ CPC/Lean reconstruction, or competitive performance comparison was run here.
 Full inputs, proofs, receipts, selection, binary hashes and timings are archived
 under `tests/finite_field/results/fmcad-proof-pipeline-v2/` (ignored benchmark
 artifacts). A small checked disequality fixture is tracked under
-`tests/finite_field/fixtures/certificates/artifact-disequality/`.
+`z3test/regressions/finite_field/fixtures/certificates/artifact-disequality/`.
 
 ## Priorities identified at this milestone (see the third-milestone update)
 

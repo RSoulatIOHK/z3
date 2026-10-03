@@ -156,7 +156,9 @@ premise sets alone are not certificates.
 
 ## Validation and research artifacts
 
-See [the regression test guide](../tests/finite_field/README.md) for build and
+The external harness and fixtures live in a pinned `z3test` checkout.
+The `finite-field.yml` CI job runs both solver and certificate suites. Native
+C++ unit tests remain in `src/test`. See [the regression test guide](https://github.com/RSoulatIOHK/z3test/blob/ba8b14e7eafd0f1f3406f35c27a46bd9c7e24d80/regressions/finite_field/README.md) for build and
 check commands. Tests cover exact small-field oracles, models, resource recovery,
 scopes, theory combination, simplification, APIs and proof rejection/mutation.
 
