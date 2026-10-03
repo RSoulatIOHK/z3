@@ -18,6 +18,7 @@ Author:
 
 --*/
 #include "smt/theory_ff.h"
+#include "ast/ff/ff_evidence.h"
 #include "smt/smt_context.h"
 #include "smt/smt_model_generator.h"
 #include "smt/proto_model/proto_model.h"
@@ -84,7 +85,7 @@ namespace smt {
         return expr_ref(m.mk_app(wraps.find(e->get_sort()), e), m);
     }
 
-    void theory_ff::assert_axiom(expr *e, bool simplify) {
+    void theory_ff::assert_axiom(expr *e, bool simplify, app *evidence) {
         expr_ref axiom(e, m);
         if (simplify)
             rw(axiom);
@@ -95,7 +96,13 @@ namespace smt {
         ctx.internalize(axiom, false);
         literal lit = ctx.get_literal(axiom);
         ctx.mark_as_relevant(lit);
-        ctx.mk_th_axiom(get_id(), 1, &lit);
+        if (m.proofs_enabled()) {
+            if (!evidence) throw default_exception("finite-field lemma requires recorded evidence");
+            auto pr = ff::mk_refutation_lemma(m, axiom, evidence);
+            ctx.mk_clause(1, &lit, alloc(justification_proof_wrapper, ctx, pr, false), CLS_TH_AXIOM);
+        }
+        else
+            ctx.mk_th_axiom(get_id(), 1, &lit);
         ++axioms;
     }
 
@@ -203,7 +210,15 @@ namespace smt {
             // The original equality is the exact SAT premise, including when
             // recognition used its normalized form. Never assert sampled roots
             // as an exhaustive list or rewrite away this conditional guard.
-            assert_axiom(m.mk_or(clause.size(), clause.data()), false);
+            app_ref evidence(m);
+            if (m.proofs_enabled()) {
+                expr_ref_vector premises(m);
+                for (expr *lit : clause) premises.push_back(mk_not(m, lit));
+                try { evidence = ff::record_refutation(m, premises, ctx.get_params()); }
+                catch (ff::exhausted const &) { continue; }
+                if (!evidence) continue;
+            }
+            assert_axiom(m.mk_or(clause.size(), clause.data()), false, evidence);
             ++root_clauses;
             changed = true;
         }
@@ -213,7 +228,7 @@ namespace smt {
     final_check_status theory_ff::check_native() {
         ++native_checks;
         native_values.reset();
-        bool arranged = false;
+        bool arranged = false, incomplete = false;
         obj_map<sort, std::unique_ptr<field_problem>> fields;
         auto problem = [&](sort *s) -> field_problem & {
             auto &p = fields.insert_if_not_there(s, std::unique_ptr<field_problem>());
@@ -272,22 +287,21 @@ namespace smt {
             if (bv_fields.contains(s)) continue;
             auto &p = *pp;
             try {
-                lbool result = p.core.check();
+                lbool result = p.core.check(m.proofs_enabled());
                 if (result == l_undef)
                     throw ff::exhausted();
                 if (result == l_false) {
                     expr_ref_vector clause(m);
-                    // Provenance follows every ideal operation and root branch.
-                    // If these premises hold simultaneously, the polynomial system
-                    // has no solution, so their negated disjunction is field-valid.
-                    // This is a conflict explanation, not a v2 proof certificate.
+                    // The native proof leaf binds the recorded PAC derivation
+                    // to these exact premises. Equality-engine explanations are
+                    // discharged by the surrounding SMT proof.
                     for (unsigned d : p.core.conflict())
                         clause.push_back(m.mk_not(p.core.premise(d)));
                     // Preserve the exact SAT atoms. Algebraically rewriting an
                     // equality may create a different atom already assigned the
                     // opposite truth value, making the lemma satisfied instead of
                     // conflicting and repeating the same final check indefinitely.
-                    assert_axiom(m.mk_or(clause.size(), clause.data()), false);
+                    assert_axiom(m.mk_or(clause.size(), clause.data()), false, p.core.evidence());
                     ++native_conflicts;
                     return FC_CONTINUE;
                 }
@@ -327,18 +341,16 @@ namespace smt {
                 // A local algebra limit is not a reason to miss an immediate
                 // conflict in another field. Shared cancellation is still global.
                 if (m.limit().is_canceled()) return FC_GIVEUP;
-                bv_fields.insert(s);
-                ++fallbacks;
+                if (m.proofs_enabled()) incomplete = true;
+                else { bv_fields.insert(s); ++fallbacks; }
             }
         }
-        return arranged ? FC_CONTINUE : FC_DONE;
+        return arranged ? FC_CONTINUE : incomplete ? FC_GIVEUP : FC_DONE;
     }
 
     final_check_status theory_ff::final_check_eh(unsigned) {
         if (!get_num_vars())
             return FC_DONE;
-        if (m.proofs_enabled())
-            throw default_exception("finite-field combination certificates are not supported in v1");
         if (propagate_roots())
             return FC_CONTINUE;
         final_check_status status = check_native();

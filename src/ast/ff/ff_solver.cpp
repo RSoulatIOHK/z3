@@ -12,6 +12,7 @@ Abstract:
 
 --*/
 #include "ast/ff/ff_solver.h"
+#include "ast/ff/ff_evidence.h"
 #include "math/ff/ff_params.h"
 #include "util/z3_exception.h"
 
@@ -41,6 +42,7 @@ namespace ff {
         ast_manager &m;
         ff_util ff;
         smt_params_helper options;
+        params_ref params;
         ff::engine algebra;
         solver_cache::imp local;
         solver_cache::imp &enc;
@@ -49,7 +51,11 @@ namespace ff {
         std::vector<ff::polynomial> eqs, neqs;
         expr_ref_vector premises;
         std::vector<rational> values;
+        app_ref proof{m};
+        std::set<unsigned> proved_conflict;
         bool checked = false;
+        bool proof_attempted = false;
+        std::unique_ptr<recorded_problem> recording;
         lbool result = l_undef;
         struct constraint {
             expr *a, *b;
@@ -64,7 +70,7 @@ namespace ff {
         th_rewriter rw;
 
         imp(ast_manager &m, sort *s, params_ref const &p, solver_cache::imp *shared)
-            : m(m), ff(m), options(p), algebra(ff.modulus(s), m.limit(), options.ff_max_steps(),
+            : m(m), ff(m), options(p), params(p), algebra(ff.modulus(s), m.limit(), options.ff_max_steps(),
                                    options.ff_max_terms(), options.ff_bit_propagation(),
                                    options.ff_batch(), options.ff_sparse_witness()),
               local(m, s), enc(shared && !options.ff_compact_encoding() ? *shared : local),
@@ -333,6 +339,20 @@ namespace ff {
             return cache.find(root);
         }
 
+        std::set<unsigned> evidence_inputs(expr_ref_vector& recorded) {
+            obj_hashtable<expr> seen;
+            std::set<unsigned> indices;
+            for (unsigned i = 0; i < premises.size(); ++i) {
+                expr* premise = premises.get(i);
+                if (!seen.contains(premise)) {
+                    seen.insert(premise);
+                    recorded.push_back(premise);
+                    indices.insert(i);
+                }
+            }
+            return indices;
+        }
+
         void add(expr *a, expr *b, bool equality) {
             expr_ref premise(m.mk_eq(a, b), m);
             if (!equality)
@@ -363,10 +383,28 @@ namespace ff {
             throw default_exception("finite-field solver constraint has the wrong field");
         m_imp->add(a, b, equality);
     }
-    lbool solver::check() {
+    lbool solver::check(bool record_proof) {
         if (m_imp->checked)
             throw default_exception("finite-field solver problem has already been checked");
         m_imp->checked = true;
+        if (record_proof) {
+            m_imp->proof_attempted = true;
+            // Proof-dependent rows cannot enter the ordinary basis cache.
+            m_imp->algebra.set_basis_cache(nullptr);
+            // Equality-engine edges and assigned atoms can duplicate premises.
+            // Deduplicate the evidence encoding only: changing the ordinary
+            // equation sequence also changes its bounded elimination/search
+            // heuristics. Conflict indices still refer to the original inputs.
+            expr_ref_vector recorded_premises(m_imp->m);
+            auto recorded_indices = m_imp->evidence_inputs(recorded_premises);
+            m_imp->recording = std::make_unique<recorded_problem>(
+                m_imp->m, m_imp->local.field, m_imp->algebra, recorded_premises);
+            auto result = m_imp->recording->check();
+            m_imp->proof = m_imp->recording->evidence();
+            if (result == l_false)
+                m_imp->proved_conflict = std::move(recorded_indices);
+            return m_imp->result = result;
+        }
         m_imp->prepare();
         m_imp->values.resize(m_imp->num_variables);
         lbool result = m_imp->algebra.solve(m_imp->eqs, m_imp->neqs, m_imp->values);
@@ -384,12 +422,32 @@ namespace ff {
             throw default_exception("finite-field candidate is unavailable");
         if (term->get_sort() != m_imp->local.field)
             throw default_exception("finite-field candidate term has the wrong field");
-        return m_imp->evaluate(term, m_imp->values);
+        return m_imp->recording ? m_imp->recording->value(term) : m_imp->evaluate(term, m_imp->values);
     }
     expr *solver::premise(unsigned index) const { return m_imp->premises.get(index); }
+    app* solver::evidence() const { return m_imp->proof; }
+    bool solver::refute() {
+        if (!m_imp->checked || m_imp->result == l_true)
+            throw default_exception("finite-field refutation requires an inconclusive or UNSAT check");
+        if (!m_imp->proof) {
+            if (m_imp->proof_attempted) return false;
+            m_imp->proof_attempted = true;
+            params_ref remaining(m_imp->params);
+            unsigned used = m_imp->algebra.steps(), budget = m_imp->options.ff_max_steps();
+            remaining.set_uint("ff.max_steps", used >= budget ? 0 : budget - used);
+            expr_ref_vector recorded_premises(m_imp->m);
+            auto recorded_indices = m_imp->evidence_inputs(recorded_premises);
+            m_imp->proof = record_refutation(m_imp->m,recorded_premises,remaining);
+            if (m_imp->proof)
+                m_imp->proved_conflict = std::move(recorded_indices);
+        }
+        if (!m_imp->proof) return false;
+        m_imp->result = l_false;
+        return true;
+    }
     std::set<unsigned> const &solver::conflict() const {
         SASSERT(m_imp->result == l_false);
-        return m_imp->algebra.conflict();
+        return m_imp->proof ? m_imp->proved_conflict : m_imp->algebra.conflict();
     }
     expr_ref root_lemmas::square_root_term(expr *e) {
         rational value, root;

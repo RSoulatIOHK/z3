@@ -43,7 +43,7 @@ def sequences(factory, prime=7):
           unsat, 'array of sequences field roots')
 
 
-def examples(factory):
+def examples(factory, include_sequences=True):
     F = FiniteFieldSort(7)
     x, y = FiniteFieldElems('x y', F)
     one, six = FiniteFieldVal(1, F), FiniteFieldVal(6, F)
@@ -74,7 +74,8 @@ def examples(factory):
     B = Array('B', IntSort(), F)
     check(factory, [i == 2, Select(B, i)*Select(B, i) == 3], unsat, 'field array range')
     check(factory, [Select(Store(B, i, x), i) == x, x*x == 2], sat, 'store model')
-    sequences(factory)
+    if include_sequences:
+        sequences(factory)
     Box = Datatype('FFBox')
     Box.declare('box', ('value', F))
     Box = Box.create()
@@ -168,16 +169,14 @@ def lifecycle():
             assert s.check() == unsat
             s.pop()
             assert s.check() == sat
-    # Certificates remain explicitly unsupported, including the new raw path.
+    # The persistent legacy SMT context now records native field proofs too.
     ctx = Context(proof=True)
     F = FiniteFieldSort(7, ctx)
     x = FiniteFieldElem('proof_x', F)
     s = SimpleSolver(ctx=ctx)
     s.add(x*x == 3)
-    try:
-        assert s.check() == unknown
-    except Z3Exception as ex:
-        assert 'certificates are not supported' in str(ex), ex
+    assert s.check() == unsat
+    assert is_false(s.proof().arg(s.proof().num_args()-1))
 
 
 def exhaustive_uf(factory):

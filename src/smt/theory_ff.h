@@ -56,7 +56,7 @@ namespace smt {
 
         void ensure_helpers(sort *s);
         expr_ref wrap(expr *e);
-        void assert_axiom(expr *e, bool simplify = true);
+        void assert_axiom(expr *e, bool simplify = true, app *evidence = nullptr);
         void constrain(expr *e);
         bool propagate_roots();
         final_check_status check_native();

@@ -30,9 +30,9 @@ def main():
     assert model.eval(x).as_long()==2 and model.eval(y).as_long()==5
     proof_context=Context(proof=True);pf=FiniteFieldSort(7,proof_context);a=FiniteFieldElems('a',pf)[0]
     pg=Goal(proofs=True,ctx=proof_context);pg.add(a*a==3)
-    try: Tactic('ff-simplify',ctx=proof_context)(pg)
-    except Z3Exception as e: assert 'certificates' in str(e)
-    else: raise AssertionError('proof-producing preprocessing accepted')
+    result = Then(Tactic('ff-simplify',ctx=proof_context),
+                  Tactic('smt',ctx=proof_context))(pg)
+    assert len(result) == 1 and is_false(result[0].as_expr())
     checked=0;rng=random.Random(4469)
     for prime in [2,3,5,7,17]:
         f=FiniteFieldSort(prime);x,y=FiniteFieldElems('x y',f)
