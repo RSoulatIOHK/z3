@@ -14,6 +14,9 @@ namespace ff {
     // Bounded exhaustive propositional checking for native proof obligations.
     // Field equalities are opaque atoms; no field reasoning is trusted here.
     bool check_boolean_tautology(ast_manager &m, expr *formula);
+    // Exact bounded ring normalization, optionally modulo a nonzero scalar
+    // on both sides of an equality of field equations. No solver is called.
+    bool check_polynomial_rewrite(ast_manager& m, expr* formula);
     // One original-premise encoding, engine and recording session. Frontends
     // consume its model or refutation; no separate proof-first solve is run.
     class recorded_problem {

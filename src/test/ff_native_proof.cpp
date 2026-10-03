@@ -8,6 +8,8 @@ Copyright (c) 2026 Romain Soulat
 #include "ast/ff/ff_evidence.h"
 #include "ast/proofs/proof_checker.h"
 #include "ast/rewriter/th_rewriter.h"
+#include "ast/expr_substitution.h"
+#include "ast/rewriter/expr_replacer.h"
 #include "solver/solver.h"
 #include "solver/simplifier_solver.h"
 #include "ast/simplifiers/ff_simplify.h"
@@ -24,7 +26,7 @@ namespace {
         for (expr* c : conditions) {
             expr_ref simplified(m);
             rw(c, simplified);
-            ENSURE(m.is_true(simplified));
+            ENSURE(m.is_true(simplified) || ff::check_polynomial_rewrite(m, c));
         }
         unsigned fields = 0;
         ptr_vector<expr> todo;
@@ -82,6 +84,121 @@ void tst_ff_native_proof() {
         many = m.mk_and(many, m.mk_or(atom, m.mk_not(atom)));
     }
     ENSURE(!ff::check_boolean_tautology(m, many)); // Bound exhaustion is inconclusive.
+    // Rewriting equations may choose different pivots. Only an exact ring
+    // identity or a nonzero scalar multiple licenses this replay rule.
+    {
+        expr_ref zero(ff.mk_numeral(rational(0), field), m);
+        expr_ref f(ff.mk_add(ff.mk_mul(x, x), y), m);
+        expr_ref scaled(ff.mk_mul(three, f), m);
+        ENSURE(ff::check_polynomial_rewrite(m, m.mk_eq(m.mk_eq(f, zero), m.mk_eq(scaled, zero))));
+        ENSURE(!ff::check_polynomial_rewrite(m, m.mk_eq(m.mk_eq(f, zero), m.mk_eq(ff.mk_add(scaled, one), zero))));
+        ENSURE(!ff::check_polynomial_rewrite(m, m.mk_eq(m.mk_eq(f, zero), m.mk_eq(ff.mk_mul(zero, f), zero))));
+        ENSURE(!ff::check_polynomial_rewrite(m, m.mk_eq(ff.mk_mul(x, x), x)));
+        expr_ref product(ff.mk_mul(x, ff.mk_add(y, one)), m);
+        expr_ref expanded(ff.mk_add(ff.mk_mul(x, y), x), m);
+        ENSURE(ff::check_polynomial_rewrite(m, m.mk_eq(product, expanded)));
+        sort_ref other(ff.mk_sort(rational(101)), m);
+        expr_ref alien(m.mk_const("other_field", other), m);
+        ENSURE(!ff::check_polynomial_rewrite(m, m.mk_eq(m.mk_eq(x, zero), m.mk_eq(alien, ff.mk_numeral(rational(0), other)))));
+        m.limit().push(1);
+        ENSURE(!ff::check_polynomial_rewrite(m, m.mk_eq(product, expanded)));
+        m.limit().pop();
+        ENSURE(ff::check_polynomial_rewrite(m, m.mk_eq(product, expanded)));
+    }
+    // Local circuit rewrites use complete Boolean cases, with ordinary native
+    // proof steps. Check the arithmetic independently on every assignment;
+    // in particular, an ordinary sum is not a bit outside characteristic two.
+    for (unsigned prime : {2u, 7u, 101u}) {
+        sort_ref f(ff.mk_sort(rational(prime)), m);
+        expr_ref c(m.mk_const("selector", m.mk_bool_sort()), m);
+        expr_ref zero(ff.mk_numeral(rational(0), f), m), unit(ff.mk_numeral(rational(1), f), m);
+        expr_ref left(m.mk_ite(a, unit, zero), m), right(m.mk_ite(b, unit, zero), m);
+        expr_ref select(m.mk_ite(c, unit, zero), m);
+        expr_ref complement(ff.mk_add(unit, ff.mk_neg(left)), m);
+        expr_ref and_gate(ff.mk_mul(left, right), m);
+        expr_ref twice(ff.mk_mul(ff.mk_numeral(rational(2 % prime), f), and_gate), m);
+        expr_ref xor_gate(ff.mk_add(ff.mk_add(left, right), ff.mk_neg(twice)), m);
+        expr_ref mux(ff.mk_add(ff.mk_mul(select, left),
+            ff.mk_mul(ff.mk_add(unit, ff.mk_neg(select)), right)), m);
+        for (expr* term : {complement.get(), and_gate.get(), xor_gate.get(), mux.get()}) {
+            expr_ref rewritten(m); proof_ref identity(m);
+            ENSURE(ff_simplify_circuit(m, term, rewritten, identity, true));
+            ENSURE(identity && m.get_fact(identity) == m.mk_eq(term, rewritten));
+            proof_ref denied(m.mk_asserted(m.mk_not(m.get_fact(identity))), m);
+            proof_ref root(m.mk_unit_resolution({identity, denied}, m.mk_false()), m);
+            ENSURE(check_native(m, root) == 0);
+            for (unsigned assignment = 0; assignment < 8; ++assignment) {
+                expr_substitution sub(m);
+                sub.insert(a, assignment & 1 ? m.mk_true() : m.mk_false());
+                sub.insert(b, assignment & 2 ? m.mk_true() : m.mk_false());
+                sub.insert(c, assignment & 4 ? m.mk_true() : m.mk_false());
+                scoped_ptr<expr_replacer> replace = mk_default_expr_replacer(m, false);
+                replace->set_substitution(&sub);
+                expr_ref equality(m.get_fact(identity), m);
+                (*replace)(equality);
+                th_rewriter rw(m); rw(equality);
+                ENSURE(m.is_true(equality));
+            }
+        }
+        expr_ref_vector factors(m);
+        for (unsigned i = 0; i < 10; ++i)
+            factors.push_back(m.mk_ite(m.mk_fresh_const("wide", m.mk_bool_sort()), unit, zero));
+        expr_ref wide(ff.mk_mul(factors), m), wide_result(m); proof_ref wide_proof(m);
+        ENSURE(ff_simplify_circuit(m, wide, wide_result, wide_proof, true));
+        proof_ref wide_denied(m.mk_asserted(m.mk_not(m.get_fact(wide_proof))), m);
+        proof_ref wide_root(m.mk_unit_resolution({wide_proof, wide_denied}, m.mk_false()), m);
+        ENSURE(check_native(m, wide_root) == 0);
+        // Negated and disjunctive selectors require exact hypothesis
+        // boundaries when discharging clauses; do not flatten their negations.
+        for (expr* selector : {m.mk_not(a), m.mk_or(a, b), m.mk_not(m.mk_or(a, b))}) {
+            expr_ref selected(m.mk_ite(selector, unit, zero), m);
+            expr_ref atom(m.mk_eq(ff.mk_add(selected, right), zero), m), normalized(m);
+            proof_ref identity(m);
+            ENSURE(ff_simplify_circuit(m, atom, normalized, identity, true));
+            proof_ref denied(m.mk_asserted(m.mk_not(m.get_fact(identity))), m);
+            proof_ref root(m.mk_unit_resolution({identity, denied}, m.mk_false()), m);
+            ENSURE(check_native(m, root) == 0);
+        }
+        // Modular wrap is preserved: over F_2, two true bits sum to zero.
+        expr_ref atom(m.mk_eq(ff.mk_add(left, right), zero), m), normalized(m);
+        proof_ref atom_proof(m);
+        ENSURE(ff_simplify_circuit(m, atom, normalized, atom_proof, true));
+        for (unsigned assignment = 0; assignment < 4; ++assignment) {
+            expr_substitution sub(m);
+            sub.insert(a, assignment & 1 ? m.mk_true() : m.mk_false());
+            sub.insert(b, assignment & 2 ? m.mk_true() : m.mk_false());
+            scoped_ptr<expr_replacer> replace = mk_default_expr_replacer(m, false);
+            replace->set_substitution(&sub);
+            expr_ref value(normalized, m); (*replace)(value);
+            th_rewriter rw(m); rw(value);
+            unsigned sum = (assignment & 1) + ((assignment >> 1) & 1);
+            ENSURE(m.is_true(value) == (sum % prime == 0));
+        }
+        expr_ref sum(ff.mk_add(left, right), m), output(m); proof_ref pr(m);
+        ENSURE(ff_simplify_circuit(m, sum, output, pr, true) == (prime == 2));
+        expr_ref foreign(m.mk_const("unconstrained_wire", f), m);
+        expr_ref unknown(ff.mk_mul(left, foreign), m);
+        ENSURE(!ff_simplify_circuit(m, unknown, output, pr, true));
+    }
+    // A wide symbolic sum is still one input to a zero-test gate; its
+    // arbitrary inverse witness must not hide the Boolean indicator.
+    {
+        sort_ref f(ff.mk_sort(rational("52435875175126190479447740508185965837690552500527637822603658699938581184513")), m);
+        expr_ref_vector terms(m);
+        for (unsigned i = 0; i < 10; ++i) terms.push_back(m.mk_fresh_const("sum_input", f));
+        expr_ref sum(ff.mk_add(terms), m), z(m.mk_const("sum_indicator", f), m), u(m.mk_const("sum_inverse", f), m);
+        expr_ref zero(ff.mk_numeral(rational(0), f), m), unit(ff.mk_numeral(rational(1), f), m);
+        expr_ref guard(m.mk_eq(ff.mk_mul(sum, ff.mk_add(unit, ff.mk_mul(ff.mk_numeral(ff.modulus(f) - rational(1), f), z))), zero), m);
+        expr_ref definition(m.mk_eq(z, ff.mk_mul(sum, u)), m);
+        base_dependent_expr_state state(m);
+        state.add(dependent_expr(m, guard, m.mk_asserted(guard), nullptr));
+        state.add(dependent_expr(m, definition, m.mk_asserted(definition), nullptr));
+        ff_zero_test_simplifier pass(m, state); pass.reduce();
+        ENSURE(state.qtail() == 3);
+        proof_ref denied(m.mk_asserted(m.mk_not(state[0].fml())), m);
+        proof_ref root(m.mk_unit_resolution({state[0].pr(), denied}, m.mk_false()), m);
+        ENSURE(check_native(m, root) >= 2);
+    }
     // Proof-producing preprocessing must bind both original equations. Check
     // both indicator polarities and characteristic two, where -1 = 1.
     for (unsigned prime : {2u, 7u, 101u}) {

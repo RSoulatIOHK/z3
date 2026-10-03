@@ -212,7 +212,8 @@ namespace {
                 // normalization allowance. Retry with a fresh bounded context.
                 th_rewriter fresh(m, rewrite_params);
                 fresh(reduced, retried);
-                return m.is_true(retried) || ff::check_boolean_tautology(m, retried);
+                return m.is_true(retried) || ff::check_boolean_tautology(m, retried) ||
+                    ff::check_polynomial_rewrite(m, obligation);
             };
             unsigned fields = 0;
             while (!todo.empty()) {
@@ -267,8 +268,10 @@ namespace {
             expr_ref_vector conditions(m);
             if (!checker.check(root, conditions)) throw cmd_exception("native proof replay failed");
             for (expr *condition : conditions) {
-                if (!discharge(condition))
+                if (!discharge(condition)) {
+                    IF_VERBOSE(10, verbose_stream() << "Unproved native FF rewrite: " << mk_ismt2_pp(condition, m) << "\n");
                     throw cmd_exception("native rewrite obligation was not discharged");
+                }
             }
             ctx.regular_stream() << "(ff-native-proof-checked :field-lemmas " << fields << ")\n";
         }

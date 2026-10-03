@@ -22,10 +22,9 @@ Abstract:
     ff_basic_simplifier composes the above together with the generic
     simplify/propagate-values/solve-eqs simplifiers into the "ff-simplify"
     preprocessing pipeline used ahead of the QF_FF decision procedures
-    (ff-solve, ff-sat, ff-unique). It preserves compact theory atoms for
-    lazy Boolean search by skipping simplification entirely when a goal
-    contains a Boolean uninterpreted constant anywhere (the algebraic
-    decision procedures normalize circuits on their own). Proof mode records
+    (ff-solve, ff-sat, ff-unique). Bounded local gate and finite-valued atom
+    normalization preserve Boolean circuit structure through wire elimination.
+    Proof mode records
     local PAC derivations for domains and indicators, retaining original
     constraints when a local proof is inconclusive, and composes native proofs
     through value propagation, wire substitution, solve-eqs and rewriting.
@@ -81,13 +80,24 @@ public:
     }
 };
 
+bool ff_simplify_circuit(ast_manager& m, expr* source, expr_ref& target, proof_ref& pr, bool proofs);
+
+// Local, unconditional arithmetic/ITE identities. No SAT or SMT context is used.
+class ff_circuit_simplifier : public dependent_expr_simplifier {
+    unsigned m_rewritten = 0;
+public:
+    ff_circuit_simplifier(ast_manager &m, dependent_expr_state &s) : dependent_expr_simplifier(m, s) {}
+    char const *name() const override { return "ff-circuits"; }
+    bool supports_proofs() const override { return true; }
+    void reduce() override;
+    void collect_statistics(statistics &st) const override { st.update("ff circuit rewrites", m_rewritten); }
+    void reset_statistics() override { m_rewritten = 0; }
+};
+
 class ff_basic_simplifier : public dependent_expr_simplifier {
     params_ref                  m_params;
     scoped_ptr<then_simplifier> m_impl;
     stopwatch                   m_elapsed;
-    unsigned                    m_boolean_skips = 0;
-
-    bool skip_boolean_goal();
 
 public:
     ff_basic_simplifier(ast_manager &m, params_ref const &p, dependent_expr_state &s);

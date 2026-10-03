@@ -78,6 +78,69 @@ namespace ff {
         return true;
     }
 
+    // Replay a ring identity or an equality scaled by a nonzero field unit.
+    // This performs polynomial normalization only: no ideal computation,
+    // root search or assumption about an opaque field term is permitted.
+    bool check_polynomial_rewrite(ast_manager& m, expr* formula) {
+        ff_util ff(m);
+        expr *a, *b, *c = nullptr, *d = nullptr;
+        if (!m.is_eq(formula, a, b)) return false;
+        bool relation = m.is_bool(a);
+        if (relation) {
+            expr* left = a; expr* right = b;
+            if (!m.is_eq(left, a, b) || !m.is_eq(right, c, d)) return false;
+        }
+        if (!ff.is_ff(a) || (relation && a->get_sort() != c->get_sort())) return false;
+        engine arithmetic(ff.modulus(a->get_sort()), m.limit(), 100000, 10000, false, false, false);
+        obj_map<expr, polynomial> values;
+        unsigned variables = 0;
+        auto normalize = [&](expr* root) {
+            ptr_vector<expr> pending;
+            pending.push_back(root);
+            while (!pending.empty()) {
+                if (!m.inc() || values.size() >= 10000) throw exhausted();
+                expr* e = pending.back();
+                if (values.contains(e)) { pending.pop_back(); continue; }
+                if (!is_app(e)) throw exhausted();
+                auto* app = to_app(e);
+                bool operation = ff.is_add(e) || ff.is_mul(e) || ff.is_neg(e) || ff.is_bitsum(e);
+                if (operation) {
+                    bool ready = true;
+                    for (expr* arg : *app)
+                        if (!values.contains(arg)) { pending.push_back(arg); ready = false; }
+                    if (!ready) continue;
+                }
+                rational number;
+                polynomial value;
+                if (ff.is_numeral(e, number)) value = arithmetic.constant(number);
+                else if (!operation) value = arithmetic.variable(variables++);
+                else {
+                    value = arithmetic.constant(rational(ff.is_mul(e) ? 1 : 0));
+                    rational weight(1);
+                    for (expr* arg : *app) {
+                        if (ff.is_mul(e)) value = arithmetic.mul(value, values[arg]);
+                        else value = arithmetic.add(std::move(value), values[arg], ff.is_neg(e) ? rational(-1) : weight);
+                        if (ff.is_bitsum(e)) weight = mod(weight * rational(2), ff.modulus(e->get_sort()));
+                    }
+                }
+                values.insert(e, std::move(value)); pending.pop_back();
+            }
+            return values[root];
+        };
+        try {
+            auto left_a = normalize(a), left_b = normalize(b);
+            auto left = arithmetic.add(std::move(left_a), left_b, rational(-1));
+            if (!relation) return left.empty();
+            auto right_a = normalize(c), right_b = normalize(d);
+            auto right = arithmetic.add(std::move(right_a), right_b, rational(-1));
+            if (left.empty() || right.empty()) return left.empty() && right.empty();
+            left = arithmetic.scale(left, arithmetic.inverse(left.begin()->second));
+            right = arithmetic.scale(right, arithmetic.inverse(right.begin()->second));
+            return left.size() == right.size() && std::equal(left.begin(), left.end(), right.begin());
+        }
+        catch (exhausted const&) { return false; }
+    }
+
     namespace {
         // A deterministic extension of the AST DAG. Every arithmetic term gets
         // a defining equation; foreign applications are opaque field variables.

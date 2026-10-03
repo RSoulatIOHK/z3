@@ -43,7 +43,9 @@ namespace {
             premises.push_back(m.get_fact(p));
         }
         params_ref limits;
-        limits.set_uint("ff.max_steps", 10000);
+        // Wide zero-test inputs over large primes need more normalization work
+        // than scalar gates; this remains a local, cancellable proof budget.
+        limits.set_uint("ff.max_steps", 100000);
         limits.set_uint("ff.max_terms", 10000);
         app_ref evidence = ff::record_refutation(m, premises, limits);
         if (!evidence) return proof_ref(m);
@@ -585,6 +587,14 @@ void ff_wire_simplifier::reduce() {
         // of the former tactic implementation.
         proof_ref rewrite_pr(m), definition_pr(m_fmls[defining_indices[i]].pr(), m);
         rw(new_def, tmp, rewrite_pr);
+        // Normalize a small gate before another wire expands it. The result
+        // remains a shared ITE, and the local proof composes with substitution.
+        expr_ref circuit(m);
+        proof_ref circuit_pr(m);
+        if (ff_simplify_circuit(m, tmp, circuit, circuit_pr, m_fmls.proofs_enabled())) {
+            rewrite_pr = m.mk_transitivity(rewrite_pr, circuit_pr);
+            tmp = circuit;
+        }
         if (definition_pr && to_app(m.get_fact(definition_pr))->get_arg(0) != vars[i])
             definition_pr = m.mk_symmetry(definition_pr);
         definition_pr = m.mk_transitivity(definition_pr, new_pr, rewrite_pr);
@@ -632,6 +642,7 @@ ff_basic_simplifier::ff_basic_simplifier(ast_manager &m, params_ref const &p, de
     m_impl->add_simplifier(alloc(ff_disjunctive_simplifier, m, p, s));
     m_impl->add_simplifier(alloc(ff_zero_test_simplifier, m, s));
     m_impl->add_simplifier(alloc(ff_wire_simplifier, m, s));
+    m_impl->add_simplifier(alloc(ff_circuit_simplifier, m, s));
     m_impl->add_simplifier(alloc(ff_cond_solve_eqs_simplifier, m, p, s));
     m_impl->add_simplifier(alloc(rewriter_simplifier, m, p, s));
     updt_params(p);
@@ -651,49 +662,16 @@ void ff_basic_simplifier::collect_param_descrs(param_descrs &r) {
 void ff_basic_simplifier::collect_statistics(statistics &st) const {
     m_impl->collect_statistics(st);
     st.update("ff preprocess seconds", m_elapsed.get_seconds());
-    st.update("ff preprocess Boolean skips", m_boolean_skips);
 }
 
 void ff_basic_simplifier::reset_statistics() {
     m_elapsed.reset();
-    m_boolean_skips = 0;
     m_impl->reset_statistics();
-}
-
-bool ff_basic_simplifier::skip_boolean_goal() {
-    // Preserve compact theory atoms for lazy Boolean search. Expanding
-    // wire definitions across Boolean input choices can turn a small
-    // branch-local polynomial into a large shared Boolean/field term.
-    // The algebraic strategy still performs its own normalization.
-    // This is a cost heuristic: returning the unchanged goal neither
-    // assumes a Boolean assignment nor drops any field constraint.
-    ptr_vector<expr> todo;
-    expr_mark seen;
-    for (unsigned i : indices())
-        todo.push_back(m_fmls[i].fml());
-    while (!todo.empty()) {
-        if (!m.inc())
-            return true;
-        expr *e = todo.back();
-        todo.pop_back();
-        if (seen.is_marked(e))
-            continue;
-        seen.mark(e, true);
-        if (!is_app(e) || (is_uninterp_const(e) && m.is_bool(e)))
-            return true;
-        for (expr *arg : *to_app(e))
-            todo.push_back(arg);
-    }
-    return false;
 }
 
 void ff_basic_simplifier::reduce() {
     if (!m_params.get_bool("ff.preprocess", true))
         return;
     scoped_watch watch(m_elapsed);
-    if (skip_boolean_goal()) {
-        ++m_boolean_skips;
-        return;
-    }
     m_impl->reduce();
 }
