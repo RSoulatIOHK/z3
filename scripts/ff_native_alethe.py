@@ -302,10 +302,8 @@ class Exporter:
         return clause, unit
 
     def field(self, proof):
-        ne.check_lemma(proof)
+        problem, dag, bindings, origins, cert, values = ne.replay_lemma(proof)
         evidence = proof.decl().params()[2]
-        problem, dag, bindings, origins = ne.encode(evidence, with_bindings=True)
-        _, cert, values = fc.verify(problem, dag)
         p = int(cert[':modulus']); sort = bp.sort_text(p)
         zero, one = f'(as ff0 {sort})', f'(as ff1 {sort})'
         assumptions = evidence.arg(0).children()
@@ -542,7 +540,7 @@ def artifacts(original, root):
     return Exporter(original, root).export()
 
 
-def check_bundle(original, root, directory, carcara, ffpacheck, timeout=10):
+def _check_bundle(original, root, directory, carcara, ffpacheck, timeout, create):
     import time
     deadline = time.monotonic() + timeout
     def remaining():
@@ -550,9 +548,14 @@ def check_bundle(original, root, directory, carcara, ffpacheck, timeout=10):
         require(seconds > 0, 'native whole-proof checking timeout')
         return seconds
     directory = Path(directory)
+    if create:
+        directory.mkdir(parents=True, exist_ok=False)
+        (directory/'problem.smt2').write_text(original)
     require((directory/'problem.smt2').read_text() == original, 'original input changed')
     files = artifacts(original, root)
     for name, expected in files.items():
+        if create:
+            (directory/name).write_text(expected)
         require((directory/name).read_text() == expected, 'native whole-proof binding mismatch: ' + name)
     runs = []
     for name in files:
@@ -564,7 +567,22 @@ def check_bundle(original, root, directory, carcara, ffpacheck, timeout=10):
     result = pp.run([str(carcara), 'check', str(directory/'proof.alethe'), str(directory/'problem.smt2'),
                      '--expand-let-bindings', '--apply-function-defs', '--ff-pac-solver', str(ffpacheck)], remaining())
     require(result['stdout'].strip() == 'valid', 'Alethe completion marker missing')
-    return {'carcara':result, 'pac':runs}
+    return {'carcara':result, 'pac':runs}, files
+
+
+def check_bundle(original, root, directory, carcara, ffpacheck, timeout=10):
+    """Reconstruct the binding from the original input and proof, then check files."""
+    return _check_bundle(original, root, directory, carcara, ffpacheck, timeout, False)[0]
+
+
+def write_and_check_bundle(original, root, directory, carcara, ffpacheck, timeout=10):
+    """Create a fresh bundle with one binding/replay pass and all external checks.
+
+    The expected contents are computed here, never supplied by the producer.
+    Existing bundles must use check_bundle, which independently reconstructs
+    their contents and rejects modifications before invoking either checker.
+    """
+    return _check_bundle(original, root, directory, carcara, ffpacheck, timeout, True)
 
 
 def main():
@@ -580,7 +598,6 @@ def main():
     args = parser.parse_args()
     require(args.timeout > 0, 'timeout must be positive')
     original = pp.read(args.input)
-    args.out.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     ctx = z3.Context(proof=True)
     solver = z3.Solver(ctx=ctx)
@@ -588,12 +605,9 @@ def main():
     solver.from_string(original)
     require(solver.check() == z3.unsat, 'native solver did not produce UNSAT')
     root = solver.proof()
-    files = artifacts(original, root)
-    (args.out/'problem.smt2').write_text(original)
-    for name, value in files.items(): (args.out/name).write_text(value)
     remaining = args.timeout - (time.monotonic() - started)
     require(remaining > 0, 'whole-pipeline timeout before external checking')
-    checks = check_bundle(original, root, args.out, args.carcara, args.ffpacheck, remaining)
+    checks, files = write_and_check_bundle(original, root, args.out, args.carcara, args.ffpacheck, remaining)
     elapsed = time.monotonic() - started
     require(elapsed <= args.timeout, 'whole-pipeline timeout')
     receipt = {'status':'checked', 'profile':'native whole-proof Alethe/PAC',
