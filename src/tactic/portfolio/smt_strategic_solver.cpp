@@ -1,4 +1,3 @@
-#include "tactic/portfolio/ff_tactic.h"
 /*++
 Copyright (c) 2012 Microsoft Corporation
 
@@ -18,13 +17,12 @@ Author:
 Notes:
 
 --*/
+#include "tactic/portfolio/ff_tactic.h"
 #include "cmd_context/cmd_context.h"
 #include "solver/combined_solver.h"
 #include "solver/tactic2solver.h"
 #include "tactic/tactical.h"
 #include "tactic/probe.h"
-#include "ast/for_each_expr.h"
-#include "ast/ff_decl_plugin.h"
 #include "tactic/smtlogics/qfbv_tactic.h"
 #include "tactic/smtlogics/qflia_tactic.h"
 #include "tactic/smtlogics/qfnia_tactic.h"
@@ -39,7 +37,6 @@ Notes:
 #include "tactic/smtlogics/nra_tactic.h"
 #include "tactic/portfolio/default_tactic.h"
 #include "solver/smt_logics.h"
-#include "tactic/arith/ff_solve_tactic.h"
 #include "tactic/smtlogics/smt_tactic.h"
 #include "tactic/fd_solver/fd_solver.h"
 #include "tactic/fd_solver/smtfd_solver.h"
@@ -72,16 +69,6 @@ public:
 };
 
 
-
-static tactic *mk_ff_tactic(ast_manager &m, params_ref const &p) {
-    // Let native SMT reasoning handle residual field goals before its exact
-    // BV fallback, preserving shared equalities and lazy Boolean choices.
-    if (m.proofs_enabled())
-        return and_then(mk_ff_simplify_tactic(m, p), mk_ff_smt_tactic(m, p));
-    return annotate_tactic("ff-tactic",
-                            and_then(mk_ff_unique_tactic(m, p), mk_ff_simplify_tactic(m, p),
-                                     or_else(mk_ff_solve_tactic(m, p), mk_ff_sat_tactic(m, p), mk_ff_smt_tactic(m, p))));
-}
 
 tactic * mk_tactic_for_logic(ast_manager & m, params_ref const & p, symbol const & logic) {
     if (smt_logics::logic_is_ff(logic))
