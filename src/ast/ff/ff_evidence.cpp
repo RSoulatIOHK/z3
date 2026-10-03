@@ -139,21 +139,8 @@ namespace ff {
             return get_field(m, premises) != nullptr;
         }
     }  // namespace
-    app_ref record_refutation(ast_manager &m, expr_ref_vector const &premises, params_ref const &params) {
-        app_ref none(m);
-        sort *field = get_field(m, premises);
-        if (!field)
-            return none;
-        smt_params_helper opts(params);
-        engine e(ff_util(m).modulus(field), m.limit(), opts.ff_max_steps(), opts.ff_max_terms(), false, false, false);
-        configure_engine(e, opts);
-        encoding encoded(m, e, field);
-        encoded.bind(premises);
-        certificate cert;
-        // Native mode records the operations performed by search, including
-        // elimination and F4. No second scalar basis reconstructs a result.
-        if (!certify(e, encoded.equations, cert, 100000, certificate_backend::native))
-            return none;
+    static app_ref pack_certificate(ast_manager &m, sort *field,
+                                    expr_ref_vector const &premises, certificate const &cert) {
         arith_util arith(m);
         expr_ref_vector nodes(m);
         auto index = [&](unsigned i) { return arith.mk_int(i); };
@@ -184,6 +171,96 @@ namespace ff {
         expr *args[] = {ps, nodes.get(cert.root)};
         return app_ref(m.mk_app(symbol("ff-pac"), 2, args, m.mk_proof_sort()), m);
     }
+    struct recorded_problem::imp {
+        ast_manager &m;
+        engine &algebra;
+        sort_ref field;
+        expr_ref_vector premises;
+        encoding encoded;
+        std::vector<rational> values;
+        obj_map<expr, rational> evaluated;
+        expr_ref_vector evaluated_pins;
+        app_ref proof;
+        bool checked = false;
+        lbool result = l_undef;
+        imp(ast_manager &m, sort *field, engine &e, expr_ref_vector const &ps)
+            : m(m), algebra(e), field(field, m), premises(ps), encoded(m, e, field), evaluated_pins(m), proof(m) {}
+        rational value(expr *root) {
+            ptr_vector<expr> pending;
+            pending.push_back(root);
+            while (!pending.empty()) {
+                if (!m.inc()) throw exhausted();
+                expr *t = pending.back();
+                if (evaluated.contains(t)) { pending.pop_back(); continue; }
+                if (!is_app(t) || t->get_sort() != field) throw exhausted();
+                rational v;
+                if (encoded.ff.is_numeral(t, v)) {}
+                else if (!encoded.ff.is_interp(t)) {
+                    polynomial f;
+                    // Unconstrained foreign values extend the candidate by 0.
+                    v = encoded.terms.find(t, f) ? algebra.evaluate(f, values) : rational(0);
+                }
+                else {
+                    bool ready = true;
+                    for (expr *arg : *to_app(t))
+                        if (!evaluated.contains(arg)) { pending.push_back(arg); ready = false; }
+                    if (!ready) continue;
+                    bool mul = encoded.ff.is_mul(t);
+                    v = rational(mul ? 1 : 0);
+                    rational weight(1);
+                    for (expr *arg : *to_app(t)) {
+                        auto const &a = evaluated.find(arg);
+                        v = mod(mul ? v * a : v + weight * a, encoded.ff.modulus(field));
+                        if (encoded.ff.is_bitsum(t)) weight = mod(weight * rational(2), encoded.ff.modulus(field));
+                    }
+                    if (encoded.ff.is_neg(t)) v = mod(-v, encoded.ff.modulus(field));
+                }
+                evaluated.insert(t, v);
+                evaluated_pins.push_back(t);
+                pending.pop_back();
+            }
+            return evaluated.find(root);
+        }
+    };
+    recorded_problem::recorded_problem(ast_manager &m, sort *field, engine &e, expr_ref_vector const &ps)
+        : m_imp(std::make_unique<imp>(m, field, e, ps)) {}
+    recorded_problem::~recorded_problem() = default;
+    lbool recorded_problem::check() {
+        auto &p = *m_imp;
+        if (p.checked) throw default_exception("recorded field problem already checked");
+        p.checked = true;
+        p.encoded.bind(p.premises);
+        certificate cert;
+        p.values.resize(p.encoded.variables);
+        p.result = solve_with_certificate(p.algebra, p.encoded.equations, p.values, cert);
+        if (p.result == l_false)
+            p.proof = pack_certificate(p.m, p.field, p.premises, cert);
+        if (p.result == l_true) {
+            // Validate AST semantics independently of polynomial conversion and
+            // after restoring all eliminated definitions, including witnesses.
+            for (expr *lit : p.premises) {
+                bool positive = !p.m.is_not(lit, lit);
+                expr *a, *b;
+                if (!p.m.is_eq(lit, a, b) || (p.value(a) == p.value(b)) != positive)
+                    return p.result = l_undef;
+            }
+        }
+        return p.result;
+    }
+    app *recorded_problem::evidence() const { return m_imp->proof; }
+    rational recorded_problem::value(expr *term) {
+        if (m_imp->result != l_true) throw default_exception("recorded field candidate unavailable");
+        return m_imp->value(term);
+    }
+    app_ref record_refutation(ast_manager &m, expr_ref_vector const &premises, params_ref const &params) {
+        sort *field = get_field(m, premises);
+        if (!field) return app_ref(m);
+        smt_params_helper opts(params);
+        engine e(ff_util(m).modulus(field), m.limit(), opts.ff_max_steps(), opts.ff_max_terms(), false, false, false);
+        configure_engine(e, opts);
+        recorded_problem problem(m, field, e, premises);
+        return problem.check() == l_false ? app_ref(problem.evidence(), m) : app_ref(m);
+    }
     expr_ref_vector refutation_clause(ast_manager &m, app *proof) {
         expr_ref_vector premises(m), clause(m);
         if (!unpack(m, proof, premises))
@@ -191,6 +268,45 @@ namespace ff {
         for (expr *p : premises)
             clause.push_back(mk_not(m, p));
         return clause;
+    }
+    proof_ref mk_refutation_lemma(ast_manager &m, expr *fact, app *evidence) {
+        parameter params[] = {parameter(symbol("pac")), parameter(evidence)};
+        return proof_ref(m.mk_th_lemma(ff_util(m).get_fid(), fact, 0, nullptr, 2, params), m);
+    }
+    bool check_refutation_lemma(ast_manager &m, proof *lemma) {
+        auto *decl = lemma->get_decl();
+        if (decl->get_family_id() != m.get_basic_family_id() || decl->get_decl_kind() != PR_TH_LEMMA ||
+            decl->get_num_parameters() != 3 || !decl->get_parameter(0).is_symbol() ||
+            decl->get_parameter(0).get_symbol() != symbol("ff") ||
+            !decl->get_parameter(1).is_symbol() || decl->get_parameter(1).get_symbol() != symbol("pac") ||
+            !decl->get_parameter(2).is_ast() || !is_app(decl->get_parameter(2).get_ast()) ||
+            m.get_num_parents(lemma) != 0 || !m.has_fact(lemma))
+            return false;
+        auto *evidence = to_app(decl->get_parameter(2).get_ast());
+        if (!check_refutation(m, evidence)) return false;
+        expr_ref_vector literals(m), todo(m);
+        expr_mark present;
+        todo.push_back(m.get_fact(lemma));
+        while (!todo.empty()) {
+            expr_ref lit(todo.back(), m);
+            todo.pop_back();
+            if (m.is_true(lit)) return true;
+            if (m.is_or(lit)) {
+                for (expr *arg : *to_app(lit)) todo.push_back(arg);
+                continue;
+            }
+            bool negative = false;
+            expr *atom = lit;
+            while (m.is_not(atom, atom)) negative = !negative;
+            literals.push_back(negative ? m.mk_not(atom) : atom);
+            present.mark(literals.back(), true);
+        }
+        // Weakening is valid, but no certified literal may be removed here:
+        // propositional discharge is represented by native proof parents above
+        // this leaf, never silently assumed by the field checker.
+        for (expr *lit : refutation_clause(m, evidence))
+            if (!present.is_marked(lit)) return false;
+        return true;
     }
     bool check_refutation(ast_manager &m, app *proof) {
         try {

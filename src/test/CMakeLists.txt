@@ -115,6 +115,7 @@ add_executable(test-z3
   finite_field.cpp
   ff_solver.cpp
   ff_euf.cpp
+  ff_native_proof.cpp
   polynomial.cpp
   polynomial_factorization.cpp
   polynorm.cpp

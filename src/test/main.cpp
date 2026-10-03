@@ -139,6 +139,7 @@
     X(finite_field) \
     X(ff_solver) \
     X(ff_euf) \
+    X(ff_native_proof) \
     X(polynomial) \
     X(polynomial_factorization) \
     X(upolynomial) \

@@ -88,7 +88,7 @@ def semantic_tests(args):
 
 
 def api_tests():
-    from z3 import (FiniteFieldSort,FiniteFieldVal,FiniteFieldElems,FiniteFieldBitsum,
+    from z3 import (is_false,FiniteFieldSort,FiniteFieldVal,FiniteFieldElems,FiniteFieldBitsum,
                     SolverFor,Solver,Context,Tactic,Goal,Then,Bool,If,Or,And,Distinct,
                     simplify,sat,unsat,unknown,Z3Exception,parse_smt2_string)
     F=FiniteFieldSort(13)
@@ -163,9 +163,9 @@ def api_tests():
         text=s.to_smt2();other=SolverFor('QF_FF');other.add(parse_smt2_string(text))
         assert other.check()==sat and other.model()[a].as_long()==prime-1
     pctx=Context(proof=True);pf=FiniteFieldSort(7,pctx);a=FiniteFieldElems('a',pf)[0]
-    s=SolverFor('QF_FF',pctx);s.add(a*a==3);assert s.check()==unknown
-    assert 'certificates' in s.reason_unknown()
-    print('API, models, incrementality, cores, contexts, resource limits, invalid inputs, large primes and proof rejection passed')
+    s=SolverFor('QF_FF',pctx);s.add(a*a==3);assert s.check()==unsat
+    assert is_false(s.proof().arg(s.proof().num_args()-1))
+    print('API, models, incrementality, cores, contexts, resource limits, invalid inputs, large primes and default proof production passed')
 
 
 def main():

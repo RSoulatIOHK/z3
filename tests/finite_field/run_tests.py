@@ -13,7 +13,7 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 TESTS = Path(__file__).resolve().parent
 CORE = [
-    'test_ff_combination.py', 'test_ff_large_combination.py', 'test_ff_euf.py',
+    'test_ff_combination.py', 'test_ff_large_combination.py', 'test_ff_euf.py', 'test_ff_native_proof.py',
     'test_ff_root_clauses.py', 'test_ff_simplify.py',
     'test_ff_bit_propagation.py', 'test_ff_basis_cache.py',
     'test_ff_backend_recovery.py', 'test_qfff.py', 'test_ff_integration.py',
@@ -25,7 +25,7 @@ CORE = [
 PROOFS = ['test_ff_certificates.py', 'test_ff_proof_pipeline.py', 'test_ff_boolean_proof.py']
 CLI = {'test_qfff.py', 'test_ff_backend_recovery.py', 'test_ff_integration.py'}
 EXTERNAL = {'test_ff_proof_pipeline.py', 'test_ff_boolean_proof.py'}
-NATIVE = ['finite_field', 'ff_solver', 'ff_euf', 'smt_proof_checker', 'smt_proof_weakening', 'sat_smt_proof_scope', 'ast', 'smt_context', 'smt2print_parse', 'api', 'arith_rewriter']
+NATIVE = ['finite_field', 'ff_solver', 'ff_euf', 'ff_native_proof', 'smt_proof_checker', 'smt_proof_weakening', 'sat_smt_proof_scope', 'ast', 'smt_context', 'smt2print_parse', 'api', 'arith_rewriter']
 
 
 def positive(value):

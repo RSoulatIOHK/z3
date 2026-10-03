@@ -169,16 +169,14 @@ def lifecycle():
             assert s.check() == unsat
             s.pop()
             assert s.check() == sat
-    # Certificates remain explicitly unsupported, including the new raw path.
+    # The persistent legacy SMT context now records native field proofs too.
     ctx = Context(proof=True)
     F = FiniteFieldSort(7, ctx)
     x = FiniteFieldElem('proof_x', F)
     s = SimpleSolver(ctx=ctx)
     s.add(x*x == 3)
-    try:
-        assert s.check() == unknown
-    except Z3Exception as ex:
-        assert 'certificates are not supported' in str(ex), ex
+    assert s.check() == unsat
+    assert is_false(s.proof().arg(s.proof().num_args()-1))
 
 
 def exhaustive_uf(factory):

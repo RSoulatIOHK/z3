@@ -37,6 +37,14 @@ namespace ff {
 
     enum class certificate_backend { scalar, f4, native, automatic };
 
+    // Run the native engine once with observers attached. UNSAT includes the
+    // recorded derivation; SAT includes a model checked against these inputs.
+    // Inferences without evidence can only make this call inconclusive.
+    lbool solve_with_certificate(engine &arithmetic, std::vector<polynomial> const &equations,
+                                 std::vector<rational> &values, certificate &output,
+                                 unsigned max_nodes = 100000,
+                                 bool native_unique = true, bool native_branches = true);
+
     // Bounded reconstruction from the original polynomial equations.
     // true witnesses 1 in their ideal. false means no certificate, never SAT.
     // Exhaustion propagates; output is replaced only on success. No cache,

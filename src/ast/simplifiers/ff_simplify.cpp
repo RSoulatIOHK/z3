@@ -473,8 +473,8 @@ void ff_wire_simplifier::reduce() {
     }
     if (order.empty())
         return;
-    scoped_ptr<expr_substitution> subst = alloc(expr_substitution, m, true);
-    scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m, false);
+    scoped_ptr<expr_substitution> subst = alloc(expr_substitution, m, true, m_fmls.proofs_enabled());
+    scoped_ptr<expr_replacer> rp = mk_default_expr_replacer(m, m_fmls.proofs_enabled());
     rp->set_substitution(subst.get());
     // Build the substitution bottom-up in dependency order, applying the
     // partial substitution built so far to each definition in turn, mirroring
@@ -493,9 +493,13 @@ void ff_wire_simplifier::reduce() {
         // Normalize at each wire boundary, before another definition copies
         // the expanded DAG. This preserves the sharing and early cancellations
         // of the former tactic implementation.
-        rw(new_def);
+        proof_ref rewrite_pr(m), definition_pr(m_fmls[defining_indices[i]].pr(), m);
+        rw(new_def, tmp, rewrite_pr);
+        if (definition_pr && to_app(m.get_fact(definition_pr))->get_arg(0) != vars[i])
+            definition_pr = m.mk_symmetry(definition_pr);
+        definition_pr = m.mk_transitivity(definition_pr, new_pr, rewrite_pr);
         new_dep = m.mk_join(new_dep, m_fmls[defining_indices[i]].dep());
-        subst->insert(vars[i], new_def, new_dep);
+        subst->insert(vars[i], tmp, definition_pr, new_dep);
         // The substitution has changed: cached rewrites of a newly defined
         // variable (or a containing term) must not survive this mutation.
         rp->reset();
@@ -508,11 +512,13 @@ void ff_wire_simplifier::reduce() {
         proof_ref new_pr(m);
         expr_dependency_ref new_dep(m);
         (*rp)(d.fml(), new_f, new_pr, new_dep);
-        rw(new_f, tmp);
+        proof_ref rewrite_pr(m);
+        rw(new_f, tmp, rewrite_pr);
         if (tmp == d.fml())
             continue;
         new_dep = m.mk_join(d.dep(), new_dep);
-        m_fmls.update(i, dependent_expr(m, tmp, nullptr, new_dep));
+        m_fmls.update(i, dependent_expr(m, tmp, m.mk_modus_ponens(d.pr(),
+            m.mk_transitivity(new_pr, rewrite_pr)), new_dep));
     }
     m_eliminated += static_cast<unsigned>(order.size());
     m_fmls.model_trail().push(subst.detach(), {}, false);
@@ -532,9 +538,14 @@ ff_basic_simplifier::ff_basic_simplifier(ast_manager &m, params_ref const &p, de
     // constraints still reach solving.
     m_impl = alloc(then_simplifier, m, p, s);
     m_impl->add_simplifier(alloc(rewriter_simplifier, m, p, s));
-    m_impl->add_simplifier(alloc(propagate_values, m, p, s));
-    m_impl->add_simplifier(alloc(ff_disjunctive_simplifier, m, p, s));
-    m_impl->add_simplifier(alloc(ff_zero_test_simplifier, m, s));
+    if (!s.proofs_enabled()) {
+        // These passes do not yet produce evidence. Keep their original
+        // assertions in proof mode; wire substitution and solve-eqs below
+        // carry source proofs through the ordinary preprocessing interface.
+        m_impl->add_simplifier(alloc(propagate_values, m, p, s));
+        m_impl->add_simplifier(alloc(ff_disjunctive_simplifier, m, p, s));
+        m_impl->add_simplifier(alloc(ff_zero_test_simplifier, m, s));
+    }
     m_impl->add_simplifier(alloc(ff_wire_simplifier, m, s));
     m_impl->add_simplifier(alloc(ff_cond_solve_eqs_simplifier, m, p, s));
     m_impl->add_simplifier(alloc(rewriter_simplifier, m, p, s));
@@ -592,8 +603,6 @@ bool ff_basic_simplifier::skip_boolean_goal() {
 }
 
 void ff_basic_simplifier::reduce() {
-    if (m_fmls.proofs_enabled())
-        throw rewriter_exception("QF_FF certificates are not supported in v1");
     if (!m_params.get_bool("ff.preprocess", true))
         return;
     scoped_watch watch(m_elapsed);
