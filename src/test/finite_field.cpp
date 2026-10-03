@@ -1,12 +1,29 @@
+/*++
+Copyright (c) 2026 Romain Soulat
+
+Module Name:
+
+    finite_field.cpp
+
+Abstract:
+
+    Unit tests for prime-field polynomial algebra: Groebner-basis reduction,
+    certificate reconstruction, the F4/tiny backends, and model evaluation.
+
+Author:
+
+    Romain Soulat
+
+--*/
 #include "smt/smt_context.h"
 #include "cmd_context/cmd_context.h"
 #include "parsers/smt2/smt2parser.h"
 #include <sstream>
-#include "math/polynomial/ff_polynomial.h"
-#include "math/polynomial/ff_certificate.h"
-#include "math/polynomial/ff_f4.h"
-#include "math/polynomial/ff_tiny.h"
-#include "math/polynomial/ff_field.h"
+#include "math/ff/ff_polynomial.h"
+#include "math/ff/ff_certificate.h"
+#include "math/ff/ff_f4.h"
+#include "math/ff/ff_tiny.h"
+#include "math/ff/ff_field.h"
 
 #include "util/debug.h"
 #include "ast/reg_decl_plugins.h"
@@ -879,8 +896,7 @@ static void test_ff_integration() {
     // A later assertion installs field support at the existing scope depth.
     ctx.push();
     expr_ref x(m.mk_const("x", field), m), two(ff.mk_numeral(rational(2), field), m);
-    expr *args[] = {x, x};
-    expr_ref square(ff.mk_app(OP_FF_MUL, 2, args), m);
+    expr_ref square(ff.mk_mul(x, x), m);
     expr_ref eq(m.mk_eq(square, two), m);
     params_ref tiny; tiny.set_uint("ff.max_steps", 0); ctx.updt_params(tiny);
     ctx.assert_expr(eq); ENSURE(ctx.check() == l_true);
