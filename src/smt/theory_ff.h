@@ -1,12 +1,31 @@
+/*++
+Copyright (c) 2026 Romain Soulat
+
+Module Name:
+
+    theory_ff.h
+
+Abstract:
+
+    Ground theory combination for prime fields using modular algebra and
+    model arrangements, with an exact bounded bit-vector representation
+    when algebra is inconclusive. Original field sorts/terms stay in the
+    equality engine, so arrays, datatypes and uninterpreted functions
+    retain their original signatures.
+
+Author:
+
+    Romain Soulat
+
+--*/
 #pragma once
 
 #include "smt/smt_theory.h"
-#include "math/polynomial/ff_polynomial.h"
+#include "math/ff/ff_polynomial.h"
 #include "ast/ff_decl_plugin.h"
 #include "ast/bv_decl_plugin.h"
 #include "ast/rewriter/th_rewriter.h"
 #include "ast/rewriter/ff_bv_operations.h"
-#include <map>
 #include <memory>
 
 namespace smt {
@@ -29,7 +48,7 @@ namespace smt {
         obj_hashtable<sort> bv_fields; // fallback is local to a field, never the whole context
         void refresh_bv_fields();
         ff::basis_cache memo;
-        std::map<sort *, std::unique_ptr<ff_encoding_cache>> encodings;
+        obj_map<sort, std::unique_ptr<ff_encoding_cache>> encodings;
         obj_hashtable<expr> constrained;
         obj_hashtable<expr> split_atoms;
         obj_map<expr, expr *> root_norm;   // bounded pure-rewriting cache; cleared on pop

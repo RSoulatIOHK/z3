@@ -1,16 +1,34 @@
+/*++
+Copyright (c) 2026 Romain Soulat
+
+Module Name:
+
+    finite_field.cpp
+
+Abstract:
+
+    Unit tests for prime-field polynomial algebra: Groebner-basis reduction,
+    certificate reconstruction, the F4/tiny backends, and model evaluation.
+
+Author:
+
+    Romain Soulat
+
+--*/
 #include "smt/smt_context.h"
 #include "cmd_context/cmd_context.h"
 #include "parsers/smt2/smt2parser.h"
 #include <sstream>
-#include "math/polynomial/ff_polynomial.h"
-#include "math/polynomial/ff_certificate.h"
-#include "math/polynomial/ff_f4.h"
-#include "math/polynomial/ff_tiny.h"
-#include "math/polynomial/ff_field.h"
+#include "math/ff/ff_polynomial.h"
+#include "math/ff/ff_certificate.h"
+#include "math/ff/ff_f4.h"
+#include "math/ff/ff_tiny.h"
+#include "math/ff/ff_field.h"
 
 #include "util/debug.h"
 #include "ast/reg_decl_plugins.h"
 #include "ast/ff_decl_plugin.h"
+#include "ast/simplifiers/ff_simplify.h"
 #include "model/model.h"
 #include <algorithm>
 #include <iostream>
@@ -879,8 +897,7 @@ static void test_ff_integration() {
     // A later assertion installs field support at the existing scope depth.
     ctx.push();
     expr_ref x(m.mk_const("x", field), m), two(ff.mk_numeral(rational(2), field), m);
-    expr *args[] = {x, x};
-    expr_ref square(ff.mk_app(OP_FF_MUL, 2, args), m);
+    expr_ref square(ff.mk_mul(x, x), m);
     expr_ref eq(m.mk_eq(square, two), m);
     params_ref tiny; tiny.set_uint("ff.max_steps", 0); ctx.updt_params(tiny);
     ctx.assert_expr(eq); ENSURE(ctx.check() == l_true);
@@ -921,7 +938,157 @@ static void test_ff_integration() {
     std::cout << "FF integration: demand registration, scoped fallback, disabled BV and independent fields\n";
 }
 
+// Substituting a wire into another assertion must retain the defining
+// equation as a premise, including transitive definitions and shared terms.
+static void test_ff_wire_dependencies() {
+    ast_manager m;
+    reg_decl_plugins(m);
+    ff_util ff(m);
+    sort_ref field(ff.mk_sort(rational(7)), m);
+    expr_ref x(m.mk_const("x", field), m), y(m.mk_const("y", field), m);
+    expr_ref z(m.mk_const("z", field), m), zero(ff.mk_numeral(rational(0), field), m);
+    expr_ref square(ff.mk_mul(x, x), m);
+    expr_ref first(m.mk_eq(y, square), m), second(m.mk_eq(z, ff.mk_add(y, square)), m);
+    expr_ref last(m.mk_eq(z, zero), m);
+    base_dependent_expr_state state(m);
+    for (expr* f : {first.get(), second.get(), last.get()})
+        state.add(dependent_expr(m, f, nullptr, m.mk_leaf(f)));
+    ff_wire_simplifier pass(m, state);
+    pass.reduce();
+    ENSURE(!m.is_true(state[2].fml()) && !m.is_false(state[2].fml()));
+    ptr_vector<expr> premises;
+    m.linearize(state[2].dep(), premises);
+    ENSURE(premises.size() == 3 && premises.contains(first) &&
+           premises.contains(second) && premises.contains(last));
+    smt_params sp;
+    smt::context context(m, sp);
+    for (expr* f : premises)
+        context.assert_expr(f);
+    expr_ref counterexample(m.mk_not(state[2].fml()), m);
+    context.assert_expr(counterexample);
+    ENSURE(context.check() == l_false);
+}
+
+// Exercise the zero-test pass before generic rewriting can flatten products.
+// Both parenthesizations, n-ary input, and repeated factors must behave alike.
+static void test_ff_nested_zero_test() {
+    ast_manager m;
+    reg_decl_plugins(m);
+    ff_util ff(m);
+    for (unsigned prime : {2u, 7u, 101u}) {
+        sort_ref field(ff.mk_sort(rational(prime)), m);
+        expr_ref a(m.mk_const("a", field), m), b(m.mk_const("b", field), m);
+        expr_ref z(m.mk_const("z", field), m), u(m.mk_const("u", field), m);
+        expr_ref zero(ff.mk_numeral(rational(0), field), m), one(ff.mk_numeral(rational(1), field), m);
+        for (unsigned shape = 0; shape < 3; ++shape) {
+            auto product = [&](expr_ref_vector const& args) {
+                expr_ref r(m);
+                if (shape == 0) {
+                    r = args[0];
+                    for (unsigned i = 1; i < args.size(); ++i)
+                        r = ff.mk_mul(r, args[i]);
+                }
+                else if (shape == 1) {
+                    r = args.back();
+                    for (unsigned i = args.size() - 1; i-- > 0;)
+                        r = ff.mk_mul(args[i], r);
+                }
+                else
+                    r = ff.mk_mul(args);
+                return r;
+            };
+            expr_ref_vector guard_args(m);
+            guard_args.push_back(a); guard_args.push_back(z);
+            guard_args.push_back(a); guard_args.push_back(b);
+            expr_ref guard(m.mk_eq(product(guard_args), zero), m);
+            for (bool complete : {false, true}) {
+                expr_ref_vector definition_args(m);
+                definition_args.push_back(b); definition_args.push_back(u);
+                definition_args.push_back(a);
+                if (complete)
+                    definition_args.push_back(a);
+                definition_args.push_back(ff.mk_numeral(rational(prime - 1), field));
+                expr_ref rhs(ff.mk_add(one, product(definition_args)), m);
+                expr_ref definition(m.mk_eq(z, rhs), m);
+                base_dependent_expr_state state(m);
+                state.add(dependent_expr(m, guard, nullptr, m.mk_leaf(guard)));
+                state.add(dependent_expr(m, definition, nullptr, m.mk_leaf(definition)));
+                ff_zero_test_simplifier pass(m, state);
+                pass.reduce();
+                ENSURE(state.qtail() == (complete ? 3u : 2u));
+                if (complete) {
+                    ptr_vector<expr> premises;
+                    m.linearize(state[0].dep(), premises);
+                    ENSURE(premises.size() == 2 && premises.contains(guard) && premises.contains(definition));
+                    // Independently ask the SMT context whether the premises
+                    // admit a counterexample to the newly derived equality.
+                    smt_params params;
+                    smt::context context(m, params);
+                    context.assert_expr(guard);
+                    context.assert_expr(definition);
+                    expr_ref counterexample(m.mk_not(state[0].fml()), m);
+                    context.assert_expr(counterexample);
+                    ENSURE(context.check() == l_false);
+                }
+            }
+        }
+    }
+}
+
+// Duplicate zero tests must collapse before algebraic solving, even when
+// their independent inverse witnesses occur in the original definitions first.
+static void test_ff_zero_test_wire_priority() {
+    ast_manager m;
+    reg_decl_plugins(m);
+    ff_util ff(m);
+    sort_ref field(ff.mk_sort(rational(101)), m);
+    expr_ref x(m.mk_const("input", field), m);
+    expr_ref z(m.mk_const("indicator1", field), m), w(m.mk_const("indicator2", field), m);
+    expr_ref u(m.mk_const("witness1", field), m), v(m.mk_const("witness2", field), m);
+    expr_ref zero(ff.mk_numeral(rational(0), field), m), one(ff.mk_numeral(rational(1), field), m);
+    expr_ref prefix(m.mk_const("frozen_prefix", m.mk_bool_sort()), m);
+    for (bool reverse : {false, true}) {
+        base_dependent_expr_state state(m);
+        state.add(dependent_expr(m, prefix, nullptr, m.mk_leaf(prefix)));
+        state.advance_qhead();
+        expr_ref_vector premises(m);
+        for (unsigned i = 0; i < 2; ++i) {
+            expr* indicator = (i == 0) != reverse ? z.get() : w.get();
+            expr* witness = (i == 0) != reverse ? u.get() : v.get();
+            expr_ref rhs(ff.mk_add(one, ff.mk_mul(x, witness)), m);
+            premises.push_back(m.mk_eq(indicator, rhs));
+            premises.push_back(m.mk_eq(ff.mk_mul(x, indicator), zero));
+        }
+        premises.push_back(m.mk_not(m.mk_eq(z, w)));
+        for (expr* f : premises)
+            state.add(dependent_expr(m, f, nullptr, m.mk_leaf(f)));
+        ff_zero_test_simplifier zero_test(m, state);
+        zero_test.reduce();
+        ENSURE(state.qtail() == 8 && state[0].fml() == prefix);
+        for (unsigned i = 0; i < premises.size(); ++i)
+            ENSURE(state[i + 3].fml() == premises[i]);
+        ff_wire_simplifier wires(m, state);
+        wires.reduce();
+        ENSURE(state[0].fml() == prefix);
+        bool found = false;
+        for (unsigned i = state.qhead(); i < state.qtail(); ++i) {
+            if (!m.is_false(state[i].fml()))
+                continue;
+            ptr_vector<expr> deps;
+            m.linearize(state[i].dep(), deps);
+            ENSURE(deps.size() == premises.size());
+            for (expr* premise : premises)
+                ENSURE(deps.contains(premise));
+            found = true;
+        }
+        ENSURE(found);
+    }
+}
+
 void tst_finite_field() {
+    test_ff_zero_test_wire_priority();
+    test_ff_wire_dependencies();
+    test_ff_nested_zero_test();
     test_ff_integration();
     test_ff_tiny();
     test_ff_f4();

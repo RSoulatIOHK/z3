@@ -394,7 +394,30 @@ void test_strict_real_maximize_disjunction() {
 // process-global allocated memory, so the work reaching the factorizer depends
 // on machine load and on whatever ran earlier in the same process.
 
+// The field API accepts decimal modulus strings, not rational expressions or
+// partially parsed text. Reject malformed input before the permissive rational
+// parser can silently turn, for example, "junk7" into the field F_7.
+static void test_finite_field_modulus_string() {
+    Z3_config cfg = Z3_mk_config();
+    Z3_context ctx = Z3_mk_context(cfg);
+    Z3_del_config(cfg);
+    Z3_set_error_handler(ctx, [](Z3_context, Z3_error_code) {});
+    char const* invalid[] = {nullptr, "", "7junk", "junk7", "7.0", "14/2", " 7", "+7", "-7"};
+    for (char const* text : invalid) {
+        ENSURE(Z3_mk_finite_field_sort(ctx, text) == nullptr);
+        ENSURE(Z3_get_error_code(ctx) == Z3_INVALID_ARG);
+    }
+    // Errors must not poison later requests; large moduli must retain all digits.
+    for (char const* text : {"7", "170141183460469231731687303715884105727"}) {
+        Z3_sort field = Z3_mk_finite_field_sort(ctx, text);
+        ENSURE(field && Z3_get_error_code(ctx) == Z3_OK);
+        ENSURE(std::string(Z3_get_finite_field_sort_size(ctx, field)) == text);
+    }
+    Z3_del_context(ctx);
+}
+
 void tst_api() {
+    test_finite_field_modulus_string();
     test_solver_model_completion();
     test_apps();
     test_mk_app_polymorphic_arity();
