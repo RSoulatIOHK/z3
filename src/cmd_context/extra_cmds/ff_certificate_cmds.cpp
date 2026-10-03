@@ -203,6 +203,17 @@ namespace {
             rewrite_params.set_bool("local_ctx", true);
             rewrite_params.set_uint("local_ctx_limit", 1000000);
             th_rewriter rw(m, rewrite_params);
+            auto discharge = [&](expr* obligation) {
+                expr_ref reduced(m), retried(m);
+                rw(obligation, reduced);
+                if (m.is_true(reduced)) return true;
+                // The Boolean rewriter's local-context cost accumulates across
+                // calls. A previous obligation must not consume this one's
+                // normalization allowance. Retry with a fresh bounded context.
+                th_rewriter fresh(m, rewrite_params);
+                fresh(reduced, retried);
+                return m.is_true(retried) || ff::check_boolean_tautology(m, retried);
+            };
             unsigned fields = 0;
             while (!todo.empty()) {
                 if (!m.inc()) throw cmd_exception("native proof check canceled");
@@ -219,9 +230,7 @@ namespace {
                         if (!m.is_true(m.get_fact(a))) throw cmd_exception("invalid truth proof");
                         break;
                     case PR_DEF_AXIOM: {
-                        expr_ref reduced(m);
-                        rw(m.get_fact(a), reduced);
-                        if (!m.is_true(reduced) && !ff::check_boolean_tautology(m, reduced))
+                        if (!discharge(m.get_fact(a)))
                             throw cmd_exception("native Boolean axiom was not discharged");
                         break;
                     }
@@ -258,9 +267,7 @@ namespace {
             expr_ref_vector conditions(m);
             if (!checker.check(root, conditions)) throw cmd_exception("native proof replay failed");
             for (expr *condition : conditions) {
-                expr_ref reduced(m);
-                rw(condition, reduced);
-                if (!m.is_true(reduced) && !ff::check_boolean_tautology(m, reduced))
+                if (!discharge(condition))
                     throw cmd_exception("native rewrite obligation was not discharged");
             }
             ctx.regular_stream() << "(ff-native-proof-checked :field-lemmas " << fields << ")\n";
