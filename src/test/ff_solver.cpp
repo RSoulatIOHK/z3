@@ -47,7 +47,8 @@ namespace {
             ff::basis_cache basis;
             // Reuse pure encodings while changing all input equations. Test
             // compact encodings too: their fresh definitions must stay local.
-            for (bool compact : {false, true})
+            for (bool recording : {false, true})
+              for (bool compact : {false, true})
                 for (unsigned a = 0; a < prime; ++a)
                     for (unsigned b = 0; b < prime; ++b) {
                         params_ref params;
@@ -62,7 +63,7 @@ namespace {
                         for (unsigned u = 0; u < prime; ++u)
                             for (unsigned v = 0; v < prime; ++v)
                                 exists |= u*v % prime == a && (u+v) % prime == b && u != b;
-                        lbool result = core.check();
+                        lbool result = core.check(recording);
                         ENSURE(result == (exists ? l_true : l_false));
                         if (exists) {
                             rational u = core.value(x), v = core.value(y);
@@ -71,6 +72,7 @@ namespace {
                             ENSURE(u != rational(b));
                         }
                         else {
+                            if (recording) ENSURE(core.evidence() && ff::check_refutation(m, core.evidence()));
                             // Check only the reported supporting premises by
                             // exhaustive enumeration, independently of algebra.
                             for (unsigned u = 0; u < prime; ++u)
@@ -89,7 +91,7 @@ namespace {
             cache.reset();
             ENSURE(cache.size() == 0);
         }
-        ENSURE(checked == 124);
+        ENSURE(checked == 248);
     }
 
     void interface_and_scope_contract() {
