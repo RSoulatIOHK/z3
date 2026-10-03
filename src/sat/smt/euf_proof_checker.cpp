@@ -347,25 +347,27 @@ namespace euf {
         expr_mark literals;
         auto clause2 = clause(e);
 
-        // check that all literals in clause1 are in clause2
-        for (expr* arg : clause2)
-            literals.mark(arg, true);
-        for (expr* arg : clause1)
-            if (!literals.is_marked(arg)) {
-                if (m.is_not(arg, arg) && m.is_not(arg, arg) && literals.is_marked(arg)) // kludge
-                    continue;
-                IF_VERBOSE(0, verbose_stream() << mk_bounded_pp(arg, m) << " not in " << clause2 << "\n");
-                return false;
-            }
-
-        // extract negated units for literals in clause2 but not in clause1
-        // the literals should be rup
-        literals.reset();
-        for (expr* arg : clause1)
-            literals.mark(arg, true);
-        for (expr* arg : clause2)
-            if (!literals.is_marked(arg))
-                units.push_back(mk_not(m, arg));
+        // A certified clause C entails any weakening C or D. Additional
+        // literals (for example SAT user-scope guards) need no justification.
+        // Removing a literal c from C does require its complement as a unit;
+        // infer() checks every such obligation against the RUP database.
+        // Compare both clauses modulo double negation, just as mk_clause does.
+        expr_ref_vector normalized(m);
+        auto normalize = [&](expr* lit) {
+            bool sign = false;
+            while (m.is_not(lit, lit))
+                sign = !sign;
+            return expr_ref(sign ? m.mk_not(lit) : lit, m);
+        };
+        for (expr* arg : clause1) {
+            normalized.push_back(normalize(arg));
+            literals.mark(normalized.back(), true);
+        }
+        for (expr* arg : clause2) {
+            expr_ref lit = normalize(arg);
+            if (!literals.is_marked(lit))
+                units.push_back(mk_not(m, lit));
+        }
 
         return true;
     }

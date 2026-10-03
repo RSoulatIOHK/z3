@@ -138,6 +138,7 @@ add_executable(test-z3
   sat_user_scope.cpp
   sat_smt_proof_scope.cpp
   smt_proof_checker.cpp
+  smt_proof_weakening.cpp
   scoped_timer.cpp
   scoped_vector.cpp
   seq_power.cpp
