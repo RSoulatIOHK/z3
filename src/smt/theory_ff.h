@@ -21,7 +21,7 @@ Author:
 #pragma once
 
 #include "smt/smt_theory.h"
-#include "math/ff/ff_polynomial.h"
+#include "ast/ff/ff_solver.h"
 #include "ast/ff_decl_plugin.h"
 #include "ast/bv_decl_plugin.h"
 #include "ast/rewriter/th_rewriter.h"
@@ -29,7 +29,6 @@ Author:
 #include <memory>
 
 namespace smt {
-    struct ff_encoding_cache;
     // Ground theory combination using modular algebra and model arrangements,
     // with an exact bounded BV representation when algebra is inconclusive.
     // Original field sorts/terms stay in the equality engine, so arrays,
@@ -48,11 +47,10 @@ namespace smt {
         obj_hashtable<sort> bv_fields; // fallback is local to a field, never the whole context
         void refresh_bv_fields();
         ff::basis_cache memo;
-        obj_map<sort, std::unique_ptr<ff_encoding_cache>> encodings;
+        obj_map<sort, std::unique_ptr<ff::solver_cache>> encodings;
         obj_hashtable<expr> constrained;
         obj_hashtable<expr> split_atoms;
-        obj_map<expr, expr *> root_norm;   // bounded pure-rewriting cache; cleared on pop
-        expr_ref_vector root_norm_pins;
+        ff::root_lemmas roots;
         obj_map<expr, rational> native_values;
         expr_ref_vector model_values;
 
@@ -60,7 +58,6 @@ namespace smt {
         expr_ref wrap(expr *e);
         void assert_axiom(expr *e, bool simplify = true);
         void constrain(expr *e);
-        expr_ref square_root_term(expr *e);
         bool propagate_roots();
         final_check_status check_native();
         final_check_status final_check_eh(unsigned) override;
@@ -105,7 +102,7 @@ namespace smt {
             st.update("ff arrangements", arrangements);
             st.update("ff bv fallbacks", fallbacks);
             st.update("ff root clauses", root_clauses);
-            st.update("ff normalization cache entries", root_norm_pins.size() / 2);
+            st.update("ff normalization cache entries", roots.cache_size());
             st.update("ff basis cache hits", memo.hits);
             st.update("ff basis cache misses", memo.misses);
         }
