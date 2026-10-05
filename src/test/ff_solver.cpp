@@ -226,6 +226,52 @@ namespace {
         }
     }
 
+    void bit_domain_preservation() {
+        ast_manager m;
+        reg_decl_plugins(m);
+        ff_util ff(m);
+        sort_ref field(ff.mk_sort(rational(257)), m);
+        expr_ref zero(ff.mk_numeral(rational(0), field), m);
+        expr_ref one(ff.mk_numeral(rational(1), field), m);
+        params_ref params;
+        params.set_uint("ff.max_steps", 1000);
+        for (bool factored : {false, true}) {
+            ff::solver core(m, field, params);
+            expr_ref_vector xs(m), ys(m), left(m), right(m);
+            for (unsigned i = 0; i < 4; ++i) {
+                expr_ref x(m.mk_fresh_const("bit.x", field), m);
+                expr_ref y(m.mk_fresh_const("bit.y", field), m);
+                xs.push_back(x); ys.push_back(y);
+                for (expr *v : {x.get(), y.get()}) {
+                    if (factored)
+                        core.add(ff.mk_mul(v, ff.mk_add(v, ff.mk_neg(one))), zero, true);
+                    else
+                        core.add(ff.mk_mul(v, v), v, true);
+                }
+                expr_ref weight(ff.mk_numeral(rational(1u << i), field), m);
+                left.push_back(ff.mk_mul(weight, x));
+                right.push_back(ff.mk_mul(weight, y));
+            }
+            // Equal four-bit packs over F257 have identical bits: both integer
+            // sums lie in [0,15], below the modulus. Eliminating a bit through
+            // the pack equation obscures its domain and defeats bit propagation.
+            core.add(ff.mk_add(left), ff.mk_add(right), true);
+            core.add(xs.get(0), ys.get(0), false);
+            ENSURE(core.check() == l_false);
+        }
+        {
+            // The domain detector may match a polynomial identity. Preservation
+            // must never turn that heuristic match into a Boolean assumption.
+            ff::solver core(m, field, params);
+            expr_ref x(m.mk_const("not.a.bit", field), m);
+            expr_ref square(ff.mk_mul(x, x), m);
+            expr_ref two(ff.mk_numeral(rational(2), field), m);
+            core.add(square, square, true);
+            core.add(x, two, true);
+            ENSURE(core.check() == l_true && core.value(x) == rational(2));
+        }
+    }
+
     void root_clause_contract() {
         ast_manager m;
         reg_decl_plugins(m);
@@ -262,5 +308,6 @@ void tst_ff_solver() {
     exhaustive_problems();
     interface_and_scope_contract();
     preprocessing_contract();
+    bit_domain_preservation();
     root_clause_contract();
 }

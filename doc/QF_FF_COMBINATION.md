@@ -19,6 +19,10 @@ rewriter, `euf::solve_eqs`, and rewriter again to a private dependent-expression
 state. Thus definitions exposed by the current SAT assignment benefit from
 general preprocessing, even when they could not be eliminated in the original
 Boolean formula. Substitution never descends into foreign applications.
+Before `solve_eqs`, the existing field-domain recognizer freezes candidate bit
+variables so elimination cannot hide their compact domains inside wide sums.
+This preservation heuristic adds no constraint and establishes no Boolean fact;
+it only leaves those variables and their defining equations for algebra.
 
 The standard model-reconstruction trail restores eliminated constants after
 the bounded modular algebra engine solves the residual constraints. Every

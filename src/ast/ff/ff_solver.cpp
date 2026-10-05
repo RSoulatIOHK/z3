@@ -16,6 +16,7 @@ Abstract:
 #include "util/z3_exception.h"
 #include "ast/simplifiers/rewriter_simplifier.h"
 #include "ast/simplifiers/solve_eqs.h"
+#include "ast/simplifiers/ff_simplify.h"
 #include "model/model.h"
 #include "model/model_evaluator.h"
 
@@ -161,6 +162,7 @@ namespace ff {
             euf::solve_eqs solve(m, state);
             solve.updt_params(preprocess_params);
             rewrite.reduce();
+            freeze_ff_domain_variables(m, state);
             solve.reduce();
             rewrite.reduce();
             if (m.limit().is_canceled())
