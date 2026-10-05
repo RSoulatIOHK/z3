@@ -17,7 +17,7 @@ cmake --build build --target z3 test-z3 test-ff-api libz3 build_z3_python_bindin
 python3 tests/finite_field/run_tests.py --build build --suite core --out /tmp/ff-core
 ```
 
-The core selection runs **19 Python suites**, six native groups (`finite_field`,
+The core selection runs **20 Python suites**, seven native groups (`ff_solver`, `finite_field`,
 `ast`, `smt_context`, `smt2print_parse`, `api`, `arith_rewriter`), and the public
 C++ API smoke test. The smoke target keeps assertions enabled in Release builds.
 Coverage includes exhaustive small-field oracles, SAT models and UNSAT cores,
@@ -57,7 +57,9 @@ These are correctness regressions; the timed public-corpus comparisons remain
 separate from CI acceptance and are not silently refreshed by a test run.
 
 The other `test_ff_*.py` files exercise individual algebra, preprocessing,
-resource, incremental and certificate features. CLI-based suites accept `--z3`;
+resource, incremental and certificate features. The native `ff_solver` group
+checks the shared preprocessing interface, model reconstruction, conflict
+premises and cache lifecycle without an SMT context. CLI-based suites accept `--z3`;
 external proof tests additionally require the checkers documented in
 [proof_checkers/README.md](proof_checkers/README.md). Independent Python proof
 checkers intentionally do not share the C++ arithmetic/translation implementation.

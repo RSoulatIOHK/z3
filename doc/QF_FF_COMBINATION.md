@@ -12,16 +12,29 @@ assigned field equality/disequality atoms. Foreign field-valued applications
 are atomic algebraic variables; their arguments and interpretation remain with
 the owning theories. There is no eager bit-vector encoding on this path.
 
-Acyclic field wire definitions are substituted through a shared expression DAG.
-Canonical field rewriting identifies equivalent circuit expressions without
-expanding every wire into a polynomial. Cyclic and competing definitions remain
-constraints. Residual equations use the existing bounded modular algebra engine.
-SAT values are reconstructed through the DAG and checked against the collected
-constraints before the model is accepted.
+The frontend passes the current signed field equalities to `ff::solver` in
+`src/ast/ff`, independently of `smt::context`. This shared component purifies
+foreign field-valued terms into private constants, then applies the standard
+rewriter, `euf::solve_eqs`, and rewriter again to a private dependent-expression
+state. Thus definitions exposed by the current SAT assignment benefit from
+general preprocessing, even when they could not be eliminated in the original
+Boolean formula. Substitution never descends into foreign applications.
+Before `solve_eqs`, the existing field-domain recognizer freezes candidate bit
+variables so elimination cannot hide their compact domains inside wide sums.
+This preservation heuristic adds no constraint and establishes no Boolean fact;
+it only leaves those variables and their defining equations for algebra.
+
+The standard model-reconstruction trail restores eliminated constants after
+the bounded modular algebra engine solves the residual constraints. Every
+original signed input is checked against the reconstructed field candidate.
+This is not yet a combined-theory model: the frontend still enforces foreign
+semantics, congruence and arrangements before accepting it.
 
 Each algebraic input has an explicit equality or disequality premise. Conflict
-provenance produces a conditional theory lemma, with all substituted definitions
-included conservatively. Conflict clauses preserve the exact SAT atoms: rewriting
+provenance produces a conditional theory lemma, including the definitions used
+by preprocessing. Fresh Boolean dependency labels map back to the exact input
+premises; using the field formulas themselves as labels would freeze their
+variables in `solve_eqs`. Conflict clauses preserve the exact SAT atoms: rewriting
 them into different, algebraically equivalent atoms can prevent the current
 assignment from being rejected. Dependency sets are not proof certificates.
 
@@ -34,14 +47,16 @@ wires retain their algebraic values without unnecessary SAT equality decisions.
 Values are always actual elements of F_p, so this approach does not assume
 stable infiniteness. Small-field cardinality and array extensionality are tested.
 
-Before polynomial solving, a bounded root pass recognizes products equal to zero
+Before polynomial solving, shared `ff::root_lemmas` recognizes products equal to zero
 and equalities between syntactic squares. It emits clauses guarded by the exact
 original equality: A²=B² implies A=B or A=-B, including characteristic two.
 Repeated factors support quartic and other even-power reductions without general
 factorization. Only integer-square residue representatives are recognized as
 constant squares; failure is not evidence of a modular nonresidue. Product arity
 is capped at 16, and branch choices are deduplicated. Clause emission caches are
-cleared after backtracking and at the next search. Set `ff.root_split=false` to
+cleared after backtracking and at the next search. Recognition and pure rewriting
+are independent of the frontend; the SMT adapter owns guard handling, clause
+emission and backtracking. Set `ff.root_split=false` to
 disable this SMT pass; `ff root clauses` counts its emitted clauses.
 
 The polynomial engine also recognizes a*X²+c=0 when -c/a has an integer-square
@@ -49,7 +64,13 @@ representative, directly enumerating the complete ±r root set. Other quadratics
 continue through the existing field-membership gcd and root factorization.
 See [QF_FF_ROOT_BENCHMARKS.md](https://github.com/RSoulatIOHK/z3/blob/0a5210c9009ba5595521c39cefa7ef0a7b1d46aa/doc/QF_FF_ROOT_BENCHMARKS.md) for the measurements.
 
-Current equality facts and models are rebuilt after backtracking. A bounded exact basis cache can reuse compatible problems across assignments
+Each assignment uses a fresh one-shot `ff::solver`; assertions, dependency labels,
+model trails and candidates never survive into the next problem. Its optional
+encoding cache retains only pinned, assertion-independent term encodings and
+purifications, belongs to one manager/field, and must not be reset while borrowed.
+The SMT adapter bounds this cache between checks and clears it on reset. Compact
+encodings use a problem-local cache because their auxiliary equations are local.
+A bounded exact basis cache can reuse compatible problems across assignments
 and checks. Model factories
 never invent extra elements when a field's finite domain is full.
 
@@ -105,6 +126,15 @@ Quantified solving is not an acceptance claim. Proof production remains
 explicitly unsupported; see [QF_FF_CERTIFICATES.md](QF_FF_CERTIFICATES.md).
 
 ## Regression coverage
+
+The native `ff_solver` test exercises the shared interface without an SMT
+context. It exhaustively checks 124 systems over F2, F3 and F7 with compact
+encoding on and off, validating SAT values and enumerating the premise subsets
+reported for conflicts. It also covers preprocessing-only conflicts with zero
+algebra budget, reconstructed nonlinear definitions, opaque ITE/UF terms,
+changing assignments with cache reuse, cyclic definitions, cancellation and
+guarded root lemmas. These tests check explanations; they do not establish
+end-to-end proof certification of the shared interface.
 
 Release and Debug pass both combination suites. Coverage includes:
 

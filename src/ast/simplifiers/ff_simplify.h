@@ -40,6 +40,10 @@ Author:
 #include "ast/simplifiers/dependent_expr_state.h"
 #include "ast/simplifiers/then_simplifier.h"
 
+// Keep candidate bit-domain variables visible to algebra when applying generic
+// solve-eqs. Freezing only prevents elimination; it establishes no domain fact.
+void freeze_ff_domain_variables(ast_manager &m, dependent_expr_state &state);
+
 class ff_disjunctive_simplifier : public dependent_expr_simplifier {
     params_ref m_params;
 

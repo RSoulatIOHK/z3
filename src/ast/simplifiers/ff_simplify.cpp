@@ -169,6 +169,13 @@ namespace {
     };
 }  // namespace
 
+void freeze_ff_domain_variables(ast_manager &m, dependent_expr_state &state) {
+    ff_util ff(m);
+    for (unsigned i = 0; i < state.qtail(); ++i)
+        if (expr *v = domain_variable(m, ff, state[i].fml()))
+            state.freeze(v);
+}
+
 ff_disjunctive_simplifier::ff_disjunctive_simplifier(ast_manager &m, params_ref const &p, dependent_expr_state &s)
     : dependent_expr_simplifier(m, s) {
     updt_params(p);
