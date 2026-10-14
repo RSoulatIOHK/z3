@@ -164,6 +164,7 @@ namespace euf {
         symbol                           m_euf = symbol("euf");
         symbol                           m_smt = symbol("smt");            
         expr_ref_vector                  m_clause;
+        expr_ref_vector                  m_scope_guards;
         expr_ref_vector                  m_expr_args;
         vector<sat::literal_vector>      m_top_level_clauses;
 

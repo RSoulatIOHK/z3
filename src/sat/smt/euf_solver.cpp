@@ -53,7 +53,8 @@ namespace euf {
         m_to_si(&si),
         m_clause_visitor(m),
         m_smt_proof_checker(m, p),
-        m_clause(m),       
+        m_clause(m),
+        m_scope_guards(m),
         m_expr_args(m),
         m_values(m)
     {
@@ -750,7 +751,19 @@ namespace euf {
     }
 
     void solver::user_push() {
-        push();      
+        push();
+        // SAT guards every assertion in a user scope with an internal literal.
+        // Proof clauses and callbacks also need an AST for that literal. Use
+        // the scope being replayed, not back(): set_extension can attach EUF
+        // after several user scopes already exist.
+        unsigned index = m_scopes.size() - 1;
+        SASSERT(index < s().num_user_scopes());
+        expr_ref guard(m.mk_fresh_const("sat.scope", m.mk_bool_sort()), m);
+        m_trail.push(restore_vector(m_scope_guards));
+        m_scope_guards.push_back(guard);
+        set_bool_var2expr(s().user_scope_literal(index).var(), guard);
+        // This is a proof name, not an e-graph term or a user declaration.
+        // Keeping it out of the e-graph also keeps it out of returned models.
     }
 
     void solver::user_pop(unsigned n) {
